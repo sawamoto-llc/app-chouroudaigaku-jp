@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "jp.chouroudaigaku.onlinedayservice",
+      "sha256_cert_fingerprints": [
+        "58:F4:AF:66:EE:15:9F:0B:3A:B1:DA:73:C1:81:55:29:76:CE:7F:E8:AE:13:18:9A:C2:75:F2:8D:95:27:0D:6B"
+      ]
+    }
+  }
+]
