@@ -24,6 +24,7 @@
   button.primary { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 700; }
   button.ghost { background: transparent; }
   button.small { padding: 4px 10px; font-size: 14px; }
+  button.danger { color: var(--warn); border-color: #f3c4c0; }
 
   /* ログイン */
   #login { max-width: 360px; margin: 60px auto; background: var(--card); border: 1px solid var(--line);
@@ -259,7 +260,7 @@ function render(d) {
   const sched = d.schedule || {};
   const cmd = latestCmd[d.id];
   const cmdText = cmd
-    ? `最近の合図: <b>${esc({join:'今つなぐ',leave:'取り消し',reload:'再読み込み'}[cmd.action] || cmd.action)}</b>
+    ? `最近の合図: <b>${esc({join:'今つなぐ',leave:'退出',reload:'再読み込み'}[cmd.action] || cmd.action)}</b>
        → ${esc(STATUS_JA[cmd.status] || cmd.status)}${cmd.status_detail ? '(' + esc(cmd.status_detail) + ')' : ''}
        <span style="color:var(--mute)">${jst(cmd.created_at)}${cmd.issued_by_email ? ' ・ ' + esc(cmd.issued_by_email) : ''}</span>`
     : '';
@@ -324,8 +325,9 @@ function render(d) {
     </details>
     <div class="actions">
       <button class="primary" data-cmd="join" data-dev="${d.id}">今つなぐ</button>
-      <button data-cmd="leave" data-dev="${d.id}">取り消す</button>
+      <button data-cmd="leave" data-dev="${d.id}">退出</button>
       <span class="cmd">${cmdText}</span>
+      ${d.is_online ? '' : `<button class="small ghost danger" data-del="${d.id}" style="margin-left:auto">この端末を削除</button>`}
     </div>
     <details class="tt-wrap" ${ttOpenAll ? 'open' : ''}>
       <summary>時間割<span class="sum">${esc(ttSummary)}</span></summary>
@@ -348,7 +350,7 @@ function bind() {
     const { error } = await sb.rpc('issue_command', { p_device_id: b.dataset.dev, p_action: action });
     b.disabled = false;
     if (error) { toast('送れませんでした: ' + error.message); return; }
-    toast(action === 'join' ? '「今つなぐ」を送りました' : '取り消しを送りました');
+    toast(action === 'join' ? '「今つなぐ」を送りました' : '「退出」を送りました');
     setTimeout(refresh, 3000);
   });
 
@@ -397,6 +399,24 @@ function bind() {
     if (error) { toast('SIM情報を保存できませんでした: ' + error.message); return; }
     g.closest('details.sim').querySelector('.sum').textContent = [v('carrier'), v('plan'), v('number')].filter(Boolean).join(' / ') || '未入力';
     toast('SIM情報を保存しました');
+  });
+
+  // 端末の削除(オフラインの端末だけ。初期化や機種変更で残った古い登録を消す)
+  document.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
+    const name = b.closest('.device').querySelector('[data-rename]').value;
+    if (!confirm(`「${name}」を管理画面から削除しますか?
+
+・この端末の登録・合図の履歴・メモがすべて消えます
+・端末がまだ動いている場合、次の起動で「未設定」として再登録されます
+
+初期化前の古い登録を消すときに使ってください。`)) return;
+    if (!confirm(`本当に「${name}」を削除しますか?(元に戻せません)`)) return;
+    b.disabled = true;
+    const { error } = await sb.rpc('delete_device', { p_device_id: b.dataset.del });
+    b.disabled = false;
+    if (error) { toast('削除できませんでした: ' + error.message); return; }
+    toast(`「${name}」を削除しました`);
+    refresh();
   });
 
   // 端末名の変更(入力欄から離れたとき)
