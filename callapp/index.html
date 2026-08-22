@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>貸出端末 管理画面 — オンラインデイサービス長老大学</title>
+<style>
+  :root {
+    --bg: #f6f3ee; --card: #fff; --ink: #2b1a0a; --sub: #7a5a3a;
+    --line: #e2d6c6; --accent: #c44600; --ok: #2e7d32; --warn: #c62828; --mute: #9a8a78;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Yu Gothic UI", sans-serif;
+         background: var(--bg); color: var(--ink); font-size: 16px; }
+  header { background: var(--card); border-bottom: 1px solid var(--line); padding: 12px 16px;
+           display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  header h1 { font-size: 18px; margin: 0; flex: 1; }
+  header .who { color: var(--sub); font-size: 14px; }
+  main { max-width: 960px; margin: 0 auto; padding: 16px; }
+  button { font: inherit; cursor: pointer; border-radius: 8px; border: 1px solid var(--line);
+           background: #fff; padding: 8px 14px; color: var(--ink); }
+  button:disabled { opacity: .5; cursor: default; }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 700; }
+  button.ghost { background: transparent; }
+  button.small { padding: 4px 10px; font-size: 14px; }
+
+  /* ログイン */
+  #login { max-width: 360px; margin: 60px auto; background: var(--card); border: 1px solid var(--line);
+           border-radius: 12px; padding: 24px; }
+  #login label { display: block; margin: 12px 0 4px; color: var(--sub); font-size: 14px; }
+  #login input { width: 100%; font: inherit; padding: 10px; border: 1px solid var(--line); border-radius: 8px; }
+  #login button { width: 100%; margin-top: 20px; padding: 12px; }
+  .err { color: var(--warn); font-size: 14px; min-height: 1.2em; margin-top: 8px; }
+
+  /* 端末カード */
+  .device { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+            padding: 16px; margin-bottom: 16px; }
+  .device.offline { border-color: #f3c4c0; background: #fff8f7; }
+  .head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .head .name { font-size: 20px; font-weight: 700; }
+  .head .name input { font: inherit; font-weight: 700; border: 1px dashed var(--line); border-radius: 6px; padding: 2px 6px; width: 15em; }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 13px; font-weight: 700; }
+  .badge.on  { background: #e6f4ea; color: var(--ok); }
+  .badge.off { background: #fdecea; color: var(--warn); }
+  .meta { color: var(--sub); font-size: 14px; margin-top: 6px; display: flex; gap: 14px; flex-wrap: wrap; }
+  .meta .warn { color: var(--warn); font-weight: 700; }
+  .actions { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .cmd { color: var(--sub); font-size: 14px; }
+  .cmd b { color: var(--ink); }
+
+  /* メモ(貸出先など) */
+  .note { margin-top: 10px; display: flex; gap: 8px; align-items: center; }
+  .note label { color: var(--sub); font-size: 14px; white-space: nowrap; }
+  .note input { flex: 1; font: inherit; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; }
+  .note input:focus { border-color: var(--accent); outline: none; }
+
+  /* SIM情報(折りたたみ) */
+  details.sim { margin-top: 8px; }
+  details.sim summary { cursor: pointer; color: var(--sub); font-size: 14px; user-select: none; }
+  details.sim summary .sum { color: var(--ink); margin-left: 6px; }
+  .simgrid { display: grid; grid-template-columns: auto 1fr; gap: 6px 10px; align-items: center; margin-top: 8px; max-width: 560px; }
+  .simgrid label { color: var(--sub); font-size: 14px; white-space: nowrap; }
+  .simgrid input { font: inherit; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; width: 100%; }
+  .simgrid input:focus { border-color: var(--accent); outline: none; }
+  .simgrid .save { grid-column: 2; justify-self: start; }
+  .simgrid .ro { padding: 6px 0; }
+  .simgrid details.manual { grid-column: 1 / -1; }
+  .simgrid details.manual summary { color: var(--mute); font-size: 13px; cursor: pointer; }
+  .simgrid.inner { margin-top: 6px; }
+
+  /* 時間割の折りたたみ(台数が増えたとき用) */
+  details.tt-wrap { margin-top: 10px; }
+  details.tt-wrap summary { cursor: pointer; color: var(--sub); font-size: 14px; user-select: none; }
+  details.tt-wrap summary .sum { color: var(--ink); margin-left: 6px; }
+
+  /* 上部ツールバー */
+  .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+  .toolbar input { font: inherit; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; min-width: 14em; }
+  .toolbar .count { color: var(--sub); font-size: 14px; }
+
+  /* 時間割 */
+  table.tt { border-collapse: separate; border-spacing: 4px; margin-top: 14px; }
+  table.tt th { font-weight: 400; color: var(--sub); font-size: 13px; padding: 2px 0; }
+  table.tt th.slot { text-align: left; padding-right: 10px; white-space: nowrap; }
+  table.tt td { padding: 0; }
+  table.tt button.cell { width: 44px; height: 40px; padding: 0; border-radius: 8px;
+                         font-size: 18px; line-height: 1; }
+  table.tt button.cell.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  table.tt button.cell.busy { opacity: .4; }
+
+  #toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+           background: var(--ink); color: #fff; padding: 10px 18px; border-radius: 999px;
+           font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  #toast.show { opacity: 1; }
+  .empty { color: var(--mute); text-align: center; padding: 40px 0; }
+  footer { color: var(--mute); font-size: 12px; text-align: center; padding: 24px 0; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>貸出端末 管理画面</h1>
+  <span class="who" id="who"></span>
+  <button class="small ghost" id="btnReload" hidden>更新</button>
+  <button class="small ghost" id="btnLogout" hidden>ログアウト</button>
+</header>
+
+<main>
+  <section id="login">
+    <h2 style="margin:0 0 4px;font-size:18px">事務局ログイン</h2>
+    <div style="color:var(--sub);font-size:14px">オンラインデイサービス長老大学</div>
+    <label for="email">メールアドレス</label>
+    <input id="email" type="email" autocomplete="username" inputmode="email">
+    <label for="pw">パスワード</label>
+    <input id="pw" type="password" autocomplete="current-password">
+    <button class="primary" id="btnLogin">ログイン</button>
+    <div class="err" id="loginErr"></div>
+  </section>
+
+  <section id="app" hidden>
+    <div class="toolbar">
+      <input id="q" type="search" placeholder="端末名・メモで絞り込み" aria-label="絞り込み">
+      <label style="font-size:14px;color:var(--sub)"><input type="checkbox" id="ttOpen"> 時間割を開いて表示</label>
+      <span class="count" id="count"></span>
+    </div>
+    <div id="list"></div>
+  </section>
+</main>
+
+<footer>合同会社さわもと</footer>
+<div id="toast"></div>
+
+<script type="module">
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+// ---- 接続先 -------------------------------------------------------------
+// publishable(anon) キーは公開して問題ない前提のキー。
+// 誰が何をできるかは Supabase 側の RLS とログインで決まる(ここに秘密は無い)。
+const SUPABASE_URL = 'https://hukykmvbbsxzxjpnjyzc.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_8ltd17kadukzdV3NaWhtlg_Wc3PfWWT';
+const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// ---- 定数 -----------------------------------------------------------------
+const SLOTS = [
+  { n: 1, label: '1時間目', time: '10:15〜11:00' },
+  { n: 2, label: '2時間目', time: '11:15〜12:00' },
+  { n: 3, label: '3時間目', time: '13:15〜14:00' },
+  { n: 4, label: '4時間目', time: '14:15〜15:00' },
+];
+const DAYS = ['月', '火', '水', '木', '金'];   // 1=月 … 5=金
+const STATE_JA = { idle: '待機中', joining: '参加処理中', in_room: '参加中', locked_waiting: '入室待ち', error: 'エラー' };
+const STATUS_JA = { pending: 'まだ届いていない', received: '受信・参加処理中', joined: '✅ 入室した', left: '退出した', failed: '⚠ 失敗' };
+
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+let toastTimer;
+function toast(msg) {
+  const t = $('#toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+// ---- ログイン -------------------------------------------------------------
+$('#btnLogin').onclick = async () => {
+  $('#loginErr').textContent = '';
+  const { error } = await sb.auth.signInWithPassword({
+    email: $('#email').value.trim(), password: $('#pw').value,
+  });
+  if (error) { $('#loginErr').textContent = 'ログインできませんでした。メールとパスワードを確認してください。'; return; }
+  await boot();
+};
+$('#pw').addEventListener('keydown', e => { if (e.key === 'Enter') $('#btnLogin').click(); });
+$('#btnLogout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+$('#btnReload').onclick = () => refresh();
+
+async function boot() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) return;
+
+  // 事務局スタッフか確認(スタッフ台帳に自分の行があれば OK)
+  const { data: me } = await sb.from('staff').select('email, display').maybeSingle();
+  if (!me) {
+    await sb.auth.signOut();
+    $('#loginErr').textContent = 'このアカウントは事務局スタッフとして登録されていません。';
+    return;
+  }
+  $('#who').textContent = me.display || me.email;
+  $('#login').hidden = true; $('#app').hidden = false;
+  $('#btnReload').hidden = false; $('#btnLogout').hidden = false;
+  await refresh();
+  setInterval(refresh, 30_000);   // 30秒ごとに自動更新
+}
+
+// ---- 一覧 -----------------------------------------------------------------
+let latestCmd = {};   // device_id → 直近の合図
+
+async function refresh() {
+  // 入力中、または未保存の変更がある間は、自動更新で消さない
+  const a = document.activeElement;
+  if (a && (a.matches('[data-note]') || a.matches('[data-rename]') || a.closest('[data-sim]'))) return;
+  const dirty = [...document.querySelectorAll('[data-note]')].some(i => i.value.trim() !== (i.dataset.saved ?? i.defaultValue.trim()))
+             || [...document.querySelectorAll('[data-sim] input')].some(i => i.value.trim() !== i.defaultValue.trim());
+  if (dirty) return;
+
+  const [{ data: devs, error }, { data: cmds }] = await Promise.all([
+    sb.from('v_devices_status').select('*').order('name'),
+    sb.from('commands').select('device_id, action, status, status_detail, created_at, status_at, issued_by_email')
+      .order('created_at', { ascending: false }).limit(50),
+  ]);
+  if (error) { toast('読み込みに失敗しました: ' + error.message); return; }
+
+  latestCmd = {};
+  for (const c of cmds ?? []) if (!latestCmd[c.device_id]) latestCmd[c.device_id] = c;
+
+  const list = $('#list');
+  if (!devs?.length) { list.innerHTML = '<div class="empty">登録された端末はまだありません</div>'; return; }
+  // オフライン(要対応)を上に、その中で名前順
+  devs.sort((a, b) => (a.is_online === b.is_online) ? a.name.localeCompare(b.name, 'ja') : (a.is_online ? 1 : -1));
+  list.innerHTML = devs.map(render).join('');
+  bind();
+  applyFilter();
+  const off = devs.filter(d => !d.is_online).length;
+  $('#count').textContent = `${devs.length}台` + (off ? `(うちオフライン ${off}台)` : '');
+}
+
+let ttOpenAll = false;
+$('#ttOpen').onchange = (e) => { ttOpenAll = e.target.checked; document.querySelectorAll('details.tt-wrap').forEach(d => d.open = ttOpenAll); };
+$('#q').oninput = applyFilter;
+function applyFilter() {
+  const q = $('#q').value.trim().toLowerCase();
+  document.querySelectorAll('.device').forEach(el => {
+    el.hidden = q !== '' && !el.dataset.search.includes(q);
+  });
+}
+
+function agoText(iso) {
+  if (!iso) return '―';
+  const m = Math.round((Date.now() - new Date(iso)) / 60000);
+  if (m < 1) return 'たった今';
+  if (m < 60) return `${m}分前`;
+  const h = Math.floor(m / 60);
+  return h < 24 ? `${h}時間前` : `${Math.floor(h / 24)}日前`;
+}
+function jst(iso) {
+  return iso ? new Date(iso).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+}
+
+function render(d) {
+  const sched = d.schedule || {};
+  const cmd = latestCmd[d.id];
+  const cmdText = cmd
+    ? `最近の合図: <b>${esc({join:'今つなぐ',leave:'取り消し',reload:'再読み込み'}[cmd.action] || cmd.action)}</b>
+       → ${esc(STATUS_JA[cmd.status] || cmd.status)}${cmd.status_detail ? '(' + esc(cmd.status_detail) + ')' : ''}
+       <span style="color:var(--mute)">${jst(cmd.created_at)}${cmd.issued_by_email ? ' ・ ' + esc(cmd.issued_by_email) : ''}</span>`
+    : '';
+  const pw = d.is_charging === false ? '<span class="warn">⚠ 電源が抜けている?</span>' : (d.is_charging ? '充電中' : '―');
+
+  const rows = SLOTS.map(s => {
+    const on = new Set((sched[String(s.n)] || []).map(Number));
+    const cells = DAYS.map((_, i) =>
+      `<td><button class="cell ${on.has(i+1) ? 'on' : ''}" data-dev="${d.id}" data-slot="${s.n}" data-day="${i+1}"
+           title="${s.label} ${DAYS[i]}曜">${on.has(i+1) ? '●' : ''}</button></td>`).join('');
+    return `<tr><th class="slot">${s.label}<br><span style="font-weight:400;font-size:12px">${s.time}</span></th>${cells}</tr>`;
+  }).join('');
+
+  const carrierShown = d.sim_carrier_auto || d.sim_carrier;
+  const numberShown  = d.sim_number_auto  || d.sim_number;
+  const simSummary = [carrierShown, d.sim_network_auto ? `${d.sim_network_auto}回線` : null, d.sim_plan, numberShown]
+                       .filter(Boolean).join(' / ') || '未取得';
+  const NET_JA = { wifi: 'Wi-Fi', '5g': '5G', '4g': '4G', '3g': '3G', cellular: 'モバイル', none: '未接続', other: 'その他' };
+  const sig = d.signal_level == null ? '' : '▂▄▆█'.slice(0, Math.max(1, d.signal_level)).padEnd(4, '·');
+  const netLine = d.net_type ? `${NET_JA[d.net_type] || d.net_type}${d.net_type !== 'wifi' && d.signal_level != null ? ` <span title="電波 ${d.signal_level}/4">${sig}</span>` : ''}` : '';
+
+  const ttSummary = SLOTS.map(s => {
+    const on = (sched[String(s.n)] || []).map(Number).sort();
+    return on.length ? `${s.n}限:${on.map(x => DAYS[x-1]).join('')}` : null;
+  }).filter(Boolean).join('　') || '予定なし';
+
+  return `
+  <div class="device ${d.is_online ? '' : 'offline'}" data-dev="${d.id}" data-search="${esc((d.name + ' ' + (d.note || '')).toLowerCase())}">
+    <div class="head">
+      <span class="name"><input value="${esc(d.name)}" data-rename="${d.id}" aria-label="端末名"></span>
+      <span class="badge ${d.is_online ? 'on' : 'off'}">${d.is_online ? 'オンライン' : 'オフライン'}</span>
+      <span style="color:var(--sub)">${esc(STATE_JA[d.state] || d.state || '')}</span>
+    </div>
+    <div class="meta">
+      <span>${pw}</span>
+      <span>電池 ${d.battery_level ?? '―'}%</span>
+      <span>最終連絡 ${agoText(d.last_seen_at)}</span>
+      ${netLine ? `<span>${netLine}</span>` : ''}
+      <span>v${esc(d.app_version || '―')}</span>
+    </div>
+    <div class="note">
+      <label for="note-${d.id}">貸出先・メモ</label>
+      <input id="note-${d.id}" value="${esc(d.note || '')}" data-note="${d.id}" placeholder="例: 四万十会A / 2026/9 設置 / ルーター併用" maxlength="200">
+      <button class="small" data-notesave="${d.id}">保存</button>
+    </div>
+    <details class="sim">
+      <summary>SIM情報<span class="sum">${esc(simSummary)}</span></summary>
+      <div class="simgrid" data-sim="${d.id}">
+        <label>通信会社(自動)</label><div class="ro">${esc(d.sim_carrier_auto || '―')}${d.sim_network_auto ? `　<span style="color:var(--sub)">${esc(d.sim_network_auto)}回線</span>` : ''}</div>
+        <label>電話番号(自動)</label><div class="ro">${esc(d.sim_number_auto || '―')}</div>
+        <label>プラン</label>  <input data-f="plan"    value="${esc(d.sim_plan    || '')}" placeholder="例: 10GB/月" maxlength="100">
+        <label>備考</label>    <input data-f="memo"    value="${esc(d.sim_memo    || '')}" placeholder="例: 2026/8 契約・契約者: 合同会社さわもと" maxlength="200">
+        <details class="manual"><summary>自動で取れないときの手入力</summary>
+          <div class="simgrid inner">
+            <label>通信会社</label><input data-f="carrier" value="${esc(d.sim_carrier || '')}" placeholder="例: IIJmio" maxlength="100">
+            <label>電話番号</label><input data-f="number"  value="${esc(d.sim_number  || '')}" placeholder="例: 080-0000-0000" maxlength="40" inputmode="tel">
+          </div>
+        </details>
+        <button class="small save" data-simsave="${d.id}">SIM情報を保存</button>
+      </div>
+    </details>
+    <div class="actions">
+      <button class="primary" data-cmd="join" data-dev="${d.id}">今つなぐ</button>
+      <button data-cmd="leave" data-dev="${d.id}">取り消す</button>
+      <span class="cmd">${cmdText}</span>
+    </div>
+    <details class="tt-wrap" ${ttOpenAll ? 'open' : ''}>
+      <summary>時間割<span class="sum">${esc(ttSummary)}</span></summary>
+      <table class="tt">
+        <thead><tr><th></th>${DAYS.map(x => `<th>${x}</th>`).join('')}</tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </details>
+  </div>`;
+}
+
+// ---- 操作 -----------------------------------------------------------------
+function bind() {
+  // 今つなぐ / 取り消す
+  document.querySelectorAll('[data-cmd]').forEach(b => b.onclick = async () => {
+    const name = b.closest('.device').querySelector('[data-rename]').value;
+    const action = b.dataset.cmd;
+    if (action === 'join' && !confirm(`「${name}」に「今つなぐ」を送りますか?`)) return;
+    b.disabled = true;
+    const { error } = await sb.rpc('issue_command', { p_device_id: b.dataset.dev, p_action: action });
+    b.disabled = false;
+    if (error) { toast('送れませんでした: ' + error.message); return; }
+    toast(action === 'join' ? '「今つなぐ」を送りました' : '取り消しを送りました');
+    setTimeout(refresh, 3000);
+  });
+
+  // 時間割のマス目
+  document.querySelectorAll('button.cell').forEach(b => b.onclick = async () => {
+    const { dev, slot, day } = b.dataset;
+    const card = b.closest('.device');
+    const row = [...card.querySelectorAll(`button.cell[data-slot="${slot}"]`)];
+    const days = row.filter(x => x.classList.contains('on')).map(x => Number(x.dataset.day));
+    const d = Number(day);
+    const next = days.includes(d) ? days.filter(x => x !== d) : [...days, d].sort();
+    row.forEach(x => x.classList.add('busy'));
+    const { error } = await sb.rpc('set_slot_by_id', { p_device_id: dev, p_slot: Number(slot), p_days: next });
+    row.forEach(x => x.classList.remove('busy'));
+    if (error) { toast('変更できませんでした: ' + error.message); return; }
+    b.classList.toggle('on'); b.textContent = b.classList.contains('on') ? '●' : '';
+    toast('予定を変更しました(1分以内に端末へ届きます)');
+  });
+
+  // メモ(貸出先など)の保存。「保存」ボタン or Enter
+  document.querySelectorAll('[data-notesave]').forEach(b => {
+    const inp = b.closest('.note').querySelector('[data-note]');
+    const save = async () => {
+      const v = inp.value.trim();
+      b.disabled = true;
+      const { error } = await sb.rpc('set_device_note', { p_device_id: inp.dataset.note, p_note: v });
+      b.disabled = false;
+      if (error) { toast('メモを保存できませんでした: ' + error.message); return; }
+      inp.dataset.saved = v;
+      inp.closest('.device').dataset.search = (inp.closest('.device').querySelector('[data-rename]').value + ' ' + v).toLowerCase();
+      toast('メモを保存しました');
+    };
+    b.onclick = save;
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); save(); } });
+  });
+
+  // SIM情報の保存(ボタン)
+  document.querySelectorAll('[data-simsave]').forEach(b => b.onclick = async () => {
+    const g = b.closest('[data-sim]');
+    const v = (f) => g.querySelector(`[data-f="${f}"]`).value.trim();
+    b.disabled = true;
+    const { error } = await sb.rpc('set_device_sim', {
+      p_device_id: g.dataset.sim, p_carrier: v('carrier'), p_plan: v('plan'), p_number: v('number'), p_memo: v('memo'),
+    });
+    b.disabled = false;
+    if (error) { toast('SIM情報を保存できませんでした: ' + error.message); return; }
+    g.closest('details.sim').querySelector('.sum').textContent = [v('carrier'), v('plan'), v('number')].filter(Boolean).join(' / ') || '未入力';
+    toast('SIM情報を保存しました');
+  });
+
+  // 端末名の変更(入力欄から離れたとき)
+  document.querySelectorAll('[data-rename]').forEach(inp => {
+    const orig = inp.value;
+    inp.onchange = async () => {
+      const v = inp.value.trim();
+      if (!v || v === orig) { inp.value = orig; return; }
+      if (!confirm(`端末名を「${orig}」→「${v}」に変えますか?\n(本体のシールも合わせてください)`)) { inp.value = orig; return; }
+      const { error } = await sb.rpc('rename_device', { p_device_id: inp.dataset.rename, p_name: v });
+      if (error) { toast('変更できませんでした: ' + error.message); inp.value = orig; return; }
+      toast('端末名を変更しました');
+    };
+  });
+}
+
+boot();
+</script>
+</body>
+</html>
