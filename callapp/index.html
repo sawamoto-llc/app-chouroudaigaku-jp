@@ -152,6 +152,15 @@ const DAYS = ['月', '火', '水', '木', '金'];   // 1=月 … 5=金
 const STATE_JA = { idle: '待機中', joining: '参加処理中', in_room: '参加中', locked_waiting: '入室待ち', error: 'エラー' };
 const STATUS_JA = { pending: 'まだ届いていない', received: '受信・参加処理中', joined: '✅ 入室した', left: '退出した', failed: '⚠ 失敗' };
 
+// 型番 → 読みやすい機種名(手元にある機種だけ。知らない型番はそのまま出す)
+const MODEL_JA = {
+  'SM-X238Q': 'Galaxy Tab A11+ (SIM)',
+  'SM-X238C': 'Galaxy Tab A11+ (SIM)',
+  'SM-X230':  'Galaxy Tab A11+ (Wi-Fi)',
+  '2509BRP2DG': 'REDMI Pad 2 Pro (SIM)',
+};
+const modelName = (d) => d.device_model ? (MODEL_JA[d.device_model] || `${d.device_brand || ''} ${d.device_model}`.trim()) : '';
+
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -278,13 +287,14 @@ function render(d) {
   }).filter(Boolean).join('　') || '予定なし';
 
   return `
-  <div class="device ${d.is_online ? '' : 'offline'}" data-dev="${d.id}" data-search="${esc((d.name + ' ' + (d.note || '')).toLowerCase())}">
+  <div class="device ${d.is_online ? '' : 'offline'}" data-dev="${d.id}" data-search="${esc((d.name + ' ' + (d.note || '') + ' ' + modelName(d) + ' ' + (d.device_model || '')).toLowerCase())}">
     <div class="head">
       <span class="name"><input value="${esc(d.name)}" data-rename="${d.id}" aria-label="端末名"></span>
       <span class="badge ${d.is_online ? 'on' : 'off'}">${d.is_online ? 'オンライン' : 'オフライン'}</span>
       <span style="color:var(--sub)">${esc(STATE_JA[d.state] || d.state || '')}</span>
     </div>
     <div class="meta">
+      ${modelName(d) ? `<span title="${esc(d.device_model)} / Android ${esc(d.android_version || '')}">${esc(modelName(d))}${d.android_version ? ` · Android ${esc(d.android_version)}` : ''}</span>` : ''}
       <span>${pw}</span>
       <span>電池 ${d.battery_level ?? '―'}%</span>
       <span>最終連絡 ${agoText(d.last_seen_at)}</span>
