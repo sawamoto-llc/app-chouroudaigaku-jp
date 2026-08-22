@@ -44,6 +44,8 @@
   .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 13px; font-weight: 700; }
   .badge.on  { background: #e6f4ea; color: var(--ok); }
   .badge.off { background: #fdecea; color: var(--warn); }
+  .badge.kind { background: #ece9f5; color: #4a3f7a; }
+  .device.play { border-style: dashed; }
   .meta { color: var(--sub); font-size: 14px; margin-top: 6px; display: flex; gap: 14px; flex-wrap: wrap; }
   .meta .warn { color: var(--warn); font-weight: 700; }
   .actions { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
@@ -226,12 +228,16 @@ async function refresh() {
   const list = $('#list');
   if (!devs?.length) { list.innerHTML = '<div class="empty">登録された端末はまだありません</div>'; return; }
   // オフライン(要対応)を上に、その中で名前順
-  devs.sort((a, b) => (a.is_online === b.is_online) ? a.name.localeCompare(b.name, 'ja') : (a.is_online ? 1 : -1));
+  // 並び: オフラインの貸出版(要対応) → オンラインの貸出版 → Play版(台帳)。各グループ内は名前順
+  const rank = d => d.kind === 'play' ? 2 : (d.is_online ? 1 : 0);
+  devs.sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name, 'ja'));
   list.innerHTML = devs.map(render).join('');
   bind();
   applyFilter();
-  const off = devs.filter(d => !d.is_online).length;
-  $('#count').textContent = `${devs.length}台` + (off ? `(うちオフライン ${off}台)` : '');
+  const call = devs.filter(d => d.kind !== 'play');
+  const off = call.filter(d => !d.is_online).length;
+  const play = devs.length - call.length;
+  $('#count').textContent = `貸出版 ${call.length}台` + (off ? `(うちオフライン ${off}台)` : '') + (play ? ` ・ Play版 ${play}台` : '');
 }
 
 let ttOpenAll = false;
@@ -257,6 +263,7 @@ function jst(iso) {
 }
 
 function render(d) {
+  const isPlay = d.kind === 'play';
   const sched = d.schedule || {};
   const cmd = latestCmd[d.id];
   const cmdText = cmd
@@ -288,19 +295,22 @@ function render(d) {
   }).filter(Boolean).join('　') || '予定なし';
 
   return `
-  <div class="device ${d.is_online ? '' : 'offline'}" data-dev="${d.id}" data-search="${esc((d.name + ' ' + (d.note || '') + ' ' + modelName(d) + ' ' + (d.device_model || '')).toLowerCase())}">
+  <div class="device ${(!isPlay && !d.is_online) ? 'offline' : ''} ${isPlay ? 'play' : ''}" data-dev="${d.id}" data-search="${esc((d.name + ' ' + (d.note || '') + ' ' + modelName(d) + ' ' + (d.device_model || '') + (isPlay ? ' play版' : ' 貸出版')).toLowerCase())}">
     <div class="head">
       <span class="name"><input value="${esc(d.name)}" data-rename="${d.id}" aria-label="端末名"></span>
-      <span class="badge ${d.is_online ? 'on' : 'off'}">${d.is_online ? 'オンライン' : 'オフライン'}</span>
-      <span style="color:var(--sub)">${esc(STATE_JA[d.state] || d.state || '')}</span>
+      ${isPlay
+        ? `<span class="badge kind">Play版</span><span style="color:var(--sub);font-size:14px">自動監視なし(台帳のみ)</span>`
+        : `<span class="badge ${d.is_online ? 'on' : 'off'}">${d.is_online ? 'オンライン' : 'オフライン'}</span>
+           <span style="color:var(--sub)">${esc(STATE_JA[d.state] || d.state || '')}</span>`}
     </div>
     <div class="meta">
       ${modelName(d) ? `<span title="${esc(d.device_model)} / Android ${esc(d.android_version || '')}">${esc(modelName(d))}${d.android_version ? ` · Android ${esc(d.android_version)}` : ''}</span>` : ''}
+      ${isPlay ? `<span>Play版アプリ v${esc(d.app_version || '―')}</span>` : `
       <span>${pw}</span>
       <span>電池 ${d.battery_level ?? '―'}%</span>
       <span>最終連絡 ${agoText(d.last_seen_at)}</span>
       ${netLine ? `<span>${netLine}</span>` : ''}
-      <span>v${esc(d.app_version || '―')}</span>
+      <span>v${esc(d.app_version || '―')}</span>`}
     </div>
     <div class="note">
       <label for="note-${d.id}">貸出先・メモ</label>
@@ -324,18 +334,19 @@ function render(d) {
       </div>
     </details>
     <div class="actions">
+      ${isPlay ? `<span class="cmd">事務局からの呼び出し・予定変更は使えません(定時起動はアプリ側の設定)</span>` : `
       <button class="primary" data-cmd="join" data-dev="${d.id}">今つなぐ</button>
       <button data-cmd="leave" data-dev="${d.id}">退出</button>
-      <span class="cmd">${cmdText}</span>
-      ${d.is_online ? '' : `<button class="small ghost danger" data-del="${d.id}" style="margin-left:auto">この端末を削除</button>`}
+      <span class="cmd">${cmdText}</span>`}
+      ${(isPlay || !d.is_online) ? `<button class="small ghost danger" data-del="${d.id}" style="margin-left:auto">この端末を削除</button>` : ''}
     </div>
-    <details class="tt-wrap" ${ttOpenAll ? 'open' : ''}>
+    ${isPlay ? '' : `<details class="tt-wrap" ${ttOpenAll ? 'open' : ''}>
       <summary>時間割<span class="sum">${esc(ttSummary)}</span></summary>
       <table class="tt">
         <thead><tr><th></th>${DAYS.map(x => `<th>${x}</th>`).join('')}</tr></thead>
         <tbody>${rows}</tbody>
       </table>
-    </details>
+    </details>`}
   </div>`;
 }
 
