@@ -45,6 +45,9 @@
   .badge.on  { background: #e6f4ea; color: var(--ok); }
   .badge.off { background: #fdecea; color: var(--warn); }
   .badge.kind { background: #ece9f5; color: #4a3f7a; }
+  .badge.lock { background: #fff3e0; color: #8a5a00; }
+  /* 事務局からの操作がオフの端末は、時間割を触れないようにする(端末側でしか変えられない) */
+  details.tt-wrap.ro table.tt button.cell { pointer-events: none; opacity: .55; }
   .device.play { border-style: dashed; }
   .meta { color: var(--sub); font-size: 14px; margin-top: 6px; display: flex; gap: 14px; flex-wrap: wrap; }
   .meta .warn { color: var(--warn); font-weight: 700; }
@@ -273,6 +276,8 @@ function jst(iso) {
 
 function render(d) {
   const isPlay = d.kind === 'play';
+  // 端末側で「事務局からの操作」をオフにしている。ここは表示するだけで、変えられない
+  const remoteOff = !isPlay && d.remote_allowed === false;
   const sched = d.schedule || {};
   const cmd = latestCmd[d.id];
   const cmdText = cmd
@@ -310,7 +315,8 @@ function render(d) {
       ${isPlay
         ? `<span class="badge kind">Play版</span><span style="color:var(--sub);font-size:14px">自動監視なし(台帳のみ)</span>`
         : `<span class="badge ${d.is_online ? 'on' : 'off'}">${d.is_online ? 'オンライン' : 'オフライン'}</span>
-           <span style="color:var(--sub)">${esc(STATE_JA[d.state] || d.state || '')}</span>`}
+           <span style="color:var(--sub)">${esc(STATE_JA[d.state] || d.state || '')}</span>
+           ${remoteOff ? `<span class="badge lock">🔒 事務局からの操作: オフ</span>` : ''}`}
     </div>
     <div class="meta">
       ${modelName(d) ? `<span title="${esc(d.device_model)} / Android ${esc(d.android_version || '')}">${esc(modelName(d))}${d.android_version ? ` · Android ${esc(d.android_version)}` : ''}</span>` : ''}
@@ -343,14 +349,16 @@ function render(d) {
       </div>
     </details>
     <div class="actions">
-      ${isPlay ? `<span class="cmd">事務局からの呼び出し・予定変更は使えません(定時起動はアプリ側の設定)</span>` : `
+      ${isPlay ? `<span class="cmd">事務局からの呼び出し・予定変更は使えません(定時起動はアプリ側の設定)</span>`
+        : remoteOff ? `<span class="cmd">この端末は<b>事務局からの操作をオフ</b>にしています。呼び出しも時間の変更もできません。<br>変えるには端末の設定画面で「事務局からの操作を許可する」をオンにしてください。</span>`
+        : `
       <button class="primary" data-cmd="join" data-dev="${d.id}">今つなぐ</button>
       <button data-cmd="leave" data-dev="${d.id}">退出</button>
       <span class="cmd">${cmdText}</span>`}
       ${(isPlay || !d.is_online) ? `<button class="small ghost danger" data-del="${d.id}" style="margin-left:auto">この端末を削除</button>` : ''}
     </div>
-    ${isPlay ? '' : `<details class="tt-wrap" ${ttOpenAll ? 'open' : ''}>
-      <summary>時間割<span class="sum">${esc(ttSummary)}</span></summary>
+    ${isPlay ? '' : `<details class="tt-wrap ${remoteOff ? 'ro' : ''}" ${ttOpenAll ? 'open' : ''}>
+      <summary>時間割<span class="sum">${esc(ttSummary)}${remoteOff ? ' ・ 端末側でのみ変更できます' : ''}</span></summary>
       <table class="tt">
         <thead><tr><th></th>${DAYS.map(x => `<th>${x}</th>`).join('')}</tr></thead>
         <tbody>${rows}</tbody>
@@ -378,6 +386,12 @@ function bind() {
   document.querySelectorAll('button.cell').forEach(b => b.onclick = async () => {
     const { dev, slot, day } = b.dataset;
     const card = b.closest('.device');
+    // 「事務局からの操作」がオフの端末は、ここからは変えられない
+    // (見た目でも押せなくしているが、それだけに頼らない)
+    if (card.querySelector('details.tt-wrap.ro')) {
+      toast('この端末は事務局からの操作をオフにしています。端末の設定画面で変更してください');
+      return;
+    }
     const row = [...card.querySelectorAll(`button.cell[data-slot="${slot}"]`)];
     const days = row.filter(x => x.classList.contains('on')).map(x => Number(x.dataset.day));
     const d = Number(day);
