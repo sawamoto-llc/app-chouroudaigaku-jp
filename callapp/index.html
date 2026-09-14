@@ -296,7 +296,9 @@ function render(d) {
     return `<tr><th class="slot">${s.label}<br><span style="font-weight:400;font-size:12px">${s.time}</span></th>${cells}</tr>`;
   }).join('');
 
-  const carrierShown = d.sim_carrier_auto || d.sim_carrier;
+  // 会社名は手入力(例:「楽天モバイル」)があればそれを優先。自動取得は英字の事業者名
+  // (例:「Rakuten」)で、手入力と混ざると端末ごとに表記が揺れて見えるため
+  const carrierShown = d.sim_carrier || d.sim_carrier_auto;
   const numberShown  = d.sim_number_auto  || d.sim_number;
   const simSummary = [carrierShown, d.sim_network_auto ? `${d.sim_network_auto}回線` : null, d.sim_plan, numberShown]
                        .filter(Boolean).join(' / ') || '未取得';
