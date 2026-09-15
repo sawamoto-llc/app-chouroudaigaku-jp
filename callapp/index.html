@@ -46,6 +46,25 @@
   .badge.off { background: #fdecea; color: var(--warn); }
   .badge.kind { background: #ece9f5; color: #4a3f7a; }
   .badge.lock { background: #fff3e0; color: #8a5a00; }
+  .badge.use  { background: #e6f4ea; color: var(--ok); }
+  .badge.spare{ background: #eef1f5; color: #4a5568; }
+  .badge.cxl  { background: #f1f1f1; color: var(--mute); }
+
+  /* 回線(SIM)の台帳 */
+  .lines-title { font-size: 18px; margin: 28px 0 10px; display: flex; align-items: center; gap: 12px; }
+  .line { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+          padding: 12px 16px; margin-bottom: 10px; }
+  .line .top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .line .num { font-size: 18px; font-weight: 700; letter-spacing: .02em; }
+  .line .where { color: var(--ink); }
+  .line .auto { color: var(--sub); font-size: 13px; }
+  .line .meta { color: var(--sub); font-size: 14px; margin-top: 4px; display: flex; gap: 14px; flex-wrap: wrap; }
+  .line .edit { display: grid; grid-template-columns: auto 1fr; gap: 6px 10px; align-items: center;
+                margin-top: 10px; max-width: 620px; }
+  .line .edit label { color: var(--sub); font-size: 14px; white-space: nowrap; }
+  .line .edit input, .line .edit select { font: inherit; padding: 6px 10px;
+                border: 1px solid var(--line); border-radius: 8px; width: 100%; }
+  .line .edit .row { grid-column: 2; display: flex; gap: 8px; }
   /* 事務局からの操作がオフの端末は、時間割を触れないようにする(端末側でしか変えられない) */
   details.tt-wrap.ro table.tt button.cell { pointer-events: none; opacity: .55; }
   .device.play { border-style: dashed; }
@@ -131,6 +150,14 @@
       <span class="count" id="count"></span>
     </div>
     <div id="list"></div>
+
+    <!-- ===== 回線(SIM)の台帳 =====
+         端末の台帳とは別に持つ。回線は端末より長生きで、端末の間を移動し、
+         どの端末にも刺さっていない予備や、管理外の端末(iPad等)にも入るため。 -->
+    <h2 class="lines-title">&#128225; 回線(SIM)<span class="count" id="lineCount"></span>
+      <button class="small ghost" id="btnAddLine">＋ 回線を追加</button>
+    </h2>
+    <div id="lines"></div>
   </section>
 </main>
 
@@ -223,16 +250,21 @@ let latestCmd = {};   // device_id → 直近の合図
 async function refresh() {
   // 入力中、または未保存の変更がある間は、自動更新で消さない
   const a = document.activeElement;
-  if (a && (a.matches('[data-note]') || a.matches('[data-rename]') || a.closest('[data-sim]'))) return;
+  if (a && (a.matches('[data-note]') || a.matches('[data-rename]')
+            || a.closest('[data-sim]') || a.closest('.line .edit'))) return;
+  // 回線の編集欄を開いている間は、自動更新で閉じない
+  if ([...document.querySelectorAll('.line .edit')].some(e => !e.hidden)) return;
   const dirty = [...document.querySelectorAll('[data-note]')].some(i => i.value.trim() !== (i.dataset.saved ?? i.defaultValue.trim()))
              || [...document.querySelectorAll('[data-sim] input')].some(i => i.value.trim() !== i.defaultValue.trim());
   if (dirty) return;
 
-  const [{ data: devs, error }, { data: cmds }] = await Promise.all([
+  const [{ data: devs, error }, { data: cmds }, { data: lines }] = await Promise.all([
     sb.from('v_devices_status').select('*').order('name'),
     sb.from('commands').select('device_id, action, status, status_detail, created_at, status_at, issued_by_email')
       .order('created_at', { ascending: false }).limit(50),
+    sb.from('v_sim_lines').select('*').order('number'),
   ]);
+  renderLines(lines ?? []);
   if (error) { toast('読み込みに失敗しました: ' + error.message); return; }
 
   latestCmd = {};
@@ -252,6 +284,121 @@ async function refresh() {
   const play = devs.length - call.length;
   $('#count').textContent = `貸出版 ${call.length}台` + (off ? `(うちオフライン ${off}台)` : '') + (play ? ` ・ Play版 ${play}台` : '');
 }
+
+// ===== 回線(SIM)の台帳 =====
+// 端末の台帳とは別物として扱う。回線は端末より長生きで、端末の間を移動し、
+// 予備(どの端末にも刺さっていない)や管理外の端末(iPad等)にも入るため。
+// 「いまどこ」は、呼び出し端末に刺さっているものは ICCID で自動判定し、
+// それ以外は手入力(assigned_to)で補う。
+const LINE_STATUS = { in_use: '使用中', spare: '予備', cancelled: '解約' };
+const LINE_BADGE  = { in_use: 'use',   spare: 'spare', cancelled: 'cxl' };
+
+function renderLine(l) {
+  const where = l.in_device || l.assigned_to || '';
+  const iccidTail = l.iccid ? `ICCID …${esc(l.iccid.slice(-5))}` : 'ICCID 未取得';
+  return `
+  <div class="line" data-line="${l.id}">
+    <div class="top">
+      <span class="num">${esc(l.number)}</span>
+      <span class="badge ${LINE_BADGE[l.status] || 'spare'}">${esc(LINE_STATUS[l.status] || l.status)}</span>
+      ${where ? `<span class="where">${esc(where)}</span>` : '<span class="auto">行き先なし</span>'}
+      ${l.in_device ? '<span class="auto">(端末から自動で判定)</span>' : ''}
+      <button class="small ghost" data-lineedit="${l.id}" style="margin-left:auto">編集</button>
+    </div>
+    <div class="meta">
+      <span>${esc(l.carrier || '')}</span>
+      ${l.plan ? `<span>${esc(l.plan)}</span>` : ''}
+      <span>${iccidTail}</span>
+      ${l.started_on ? `<span>開始 ${esc(l.started_on)}</span>` : ''}
+      ${l.note ? `<span>${esc(l.note)}</span>` : ''}
+    </div>
+    <div class="edit" hidden>
+      <label>電話番号</label><input data-f="number" value="${esc(l.number)}">
+      <label>通信会社</label><input data-f="carrier" value="${esc(l.carrier || '')}">
+      <label>プラン</label><input data-f="plan" value="${esc(l.plan || '')}">
+      <label>ICCID</label><input data-f="iccid" value="${esc(l.iccid || '')}" placeholder="端末に挿せば自動で判定します">
+      <label>状態</label>
+      <select data-f="status">
+        ${Object.entries(LINE_STATUS).map(([k, v]) =>
+          `<option value="${k}"${l.status === k ? ' selected' : ''}>${v}</option>`).join('')}
+      </select>
+      <label>行き先</label><input data-f="assigned_to" value="${esc(l.assigned_to || '')}"
+        placeholder="${l.in_device ? '呼び出し端末に挿さっているので自動です' : '例: リアルデイ テレビ前 iPad 9'}">
+      <label>利用開始日</label><input data-f="started_on" type="date" value="${esc(l.started_on || '')}">
+      <label>メモ</label><input data-f="note" value="${esc(l.note || '')}">
+      <div class="row">
+        <button class="small primary" data-linesave="${l.id}">保存</button>
+        <button class="small ghost" data-linecancel="${l.id}">やめる</button>
+        <button class="small ghost danger" data-linedel="${l.id}" style="margin-left:auto">この回線を削除</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderLines(lines) {
+  const box = $('#lines');
+  box.innerHTML = lines.length ? lines.map(renderLine).join('')
+                              : '<div class="empty">登録された回線はまだありません</div>';
+  const use   = lines.filter(l => l.status === 'in_use').length;
+  const spare = lines.filter(l => l.status === 'spare').length;
+  $('#lineCount').textContent = `${lines.length}回線` +
+    (use || spare ? `(使用中 ${use} ・ 予備 ${spare})` : '');
+  bindLines();
+}
+
+function lineValues(card) {
+  const g = f => card.querySelector(`[data-f="${f}"]`).value.trim();
+  return {
+    p_number: g('number'), p_carrier: g('carrier'), p_plan: g('plan'), p_iccid: g('iccid'),
+    p_status: g('status'), p_assigned_to: g('assigned_to'), p_note: g('note'),
+    p_started_on: g('started_on') || null,
+  };
+}
+
+function bindLines() {
+  document.querySelectorAll('[data-lineedit]').forEach(b => b.onclick = () => {
+    const box = b.closest('.line').querySelector('.edit');
+    box.hidden = !box.hidden;
+    b.textContent = box.hidden ? '編集' : '閉じる';
+  });
+  document.querySelectorAll('[data-linecancel]').forEach(b => b.onclick = () => {
+    const card = b.closest('.line');
+    card.querySelector('.edit').hidden = true;
+    card.querySelector('[data-lineedit]').textContent = '編集';
+    refresh();
+  });
+  document.querySelectorAll('[data-linesave]').forEach(b => b.onclick = async () => {
+    const card = b.closest('.line');
+    const v = lineValues(card);
+    if (!v.p_number) { toast('電話番号を入れてください'); return; }
+    b.disabled = true;
+    const { error } = await sb.rpc('upsert_sim_line', v);
+    b.disabled = false;
+    if (error) { toast('保存できませんでした: ' + error.message); return; }
+    toast('回線を保存しました');
+    refresh();
+  });
+  document.querySelectorAll('[data-linedel]').forEach(b => b.onclick = async () => {
+    const num = b.closest('.line').querySelector('.num').textContent;
+    if (!confirm(`回線「${num}」を台帳から削除しますか?\n\n解約の記録を残したいときは、削除ではなく状態を「解約」にしてください。`)) return;
+    const { error } = await sb.rpc('delete_sim_line', { p_id: b.dataset.linedel });
+    if (error) { toast('削除できませんでした: ' + error.message); return; }
+    toast('回線を削除しました');
+    refresh();
+  });
+}
+
+$('#btnAddLine').onclick = async () => {
+  const number = prompt('追加する回線の電話番号を入れてください(例: 070-1234-5678)');
+  if (!number || !number.trim()) return;
+  const { error } = await sb.rpc('upsert_sim_line', {
+    p_number: number.trim(), p_carrier: '楽天モバイル', p_plan: null, p_iccid: null,
+    p_status: 'spare', p_assigned_to: null, p_note: null, p_started_on: null,
+  });
+  if (error) { toast('追加できませんでした: ' + error.message); return; }
+  toast('回線を追加しました。「編集」から中身を入れてください');
+  refresh();
+};
 
 let ttOpenAll = false;
 $('#ttOpen').onchange = (e) => { ttOpenAll = e.target.checked; document.querySelectorAll('details.tt-wrap').forEach(d => d.open = ttOpenAll); };
