@@ -477,9 +477,11 @@ function render(d) {
   const sig = d.signal_level == null ? '' : '▂▄▆█'.slice(0, Math.max(1, d.signal_level)).padEnd(4, '·');
   const netLine = d.net_type ? `${NET_JA[d.net_type] || d.net_type}${d.net_type !== 'wifi' && d.signal_level != null ? ` <span title="電波 ${d.signal_level}/4">${sig}</span>` : ''}` : '';
 
-  const ttSummary = SLOTS.map(s => {
-    const on = (sched[String(s.n)] || []).map(Number).sort();
-    return on.length ? `${s.n}限:${on.map(x => DAYS[x-1]).join('')}` : null;
+  // 曜日ごとに「その日は何限に出るか」を並べる(例: 月 1・2限　火 3限)。
+  // 予定は時限→曜日の形で持っているので、ここで曜日→時限に組み替える
+  const ttSummary = DAYS.map((day, i) => {
+    const slots = SLOTS.filter(s => (sched[String(s.n)] || []).map(Number).includes(i + 1)).map(s => s.n);
+    return slots.length ? `${day} ${slots.join('・')}限` : null;
   }).filter(Boolean).join('　') || '予定なし';
 
   return `
