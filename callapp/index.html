@@ -46,6 +46,11 @@
   .badge.off { background: #fdecea; color: var(--warn); }
   .badge.kind { background: #ece9f5; color: #4a3f7a; }
   .badge.lock { background: #fff3e0; color: #8a5a00; }
+  /* 利用者画面の「今から参加する」ボタンの出し入れ */
+  .joinbtn { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+             margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line);
+             color: var(--sub); font-size: 14px; }
+  .joinbtn b { color: var(--ink); }
   .badge.use  { background: #e6f4ea; color: var(--ok); }
   .badge.spare{ background: #eef1f5; color: #4a5568; }
   .badge.cxl  { background: #f1f1f1; color: var(--mute); }
@@ -183,7 +188,8 @@ const SLOTS = [
 ];
 const DAYS = ['月', '火', '水', '木', '金'];   // 1=月 … 5=金
 const STATE_JA = { idle: '待機中', joining: '参加処理中', in_room: '参加中', locked_waiting: '入室待ち', error: 'エラー' };
-const STATUS_JA = { pending: 'まだ届いていない', received: '受信・参加処理中', joined: '✅ 入室した', left: '退出した', failed: '⚠ 失敗' };
+const STATUS_JA = { pending: 'まだ届いていない', received: '受信・参加処理中', joined: '✅ 入室した', left: '退出した', failed: '⚠ 失敗', done: '✅ 反映した' };
+const ACTION_JA = { join: '今つなぐ', leave: '退出', reload: '再読み込み', show_join_button: '参加ボタンを出す', hide_join_button: '参加ボタンを隠す' };
 
 // 型番 → 読みやすい機種名(手元にある機種だけ。知らない型番はそのまま出す)
 const MODEL_JA = {
@@ -422,6 +428,24 @@ function jst(iso) {
   return iso ? new Date(iso).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
 }
 
+// 利用者モードの画面に「今から参加する」ボタンを出しているか、と、その出し入れ。
+// 端末が心拍で報告してくる事実(user_join_button)を表示し、合図(commands)で切り替える。
+// 「事務局からの操作」がオフの端末は表示だけ(送っても端末が断る)。
+function joinButtonRow(d, remoteOff) {
+  const v = d.user_join_button;
+  if (v == null) {
+    return `<div class="joinbtn">利用者画面の「今から参加する」ボタン: <span>この端末のアプリ(v${esc(d.app_version || '―')})は未対応。0.3.5 以上に更新すると出し入れできます</span></div>`;
+  }
+  const state = v ? '<b>出している</b>' : '<b>出していない</b>';
+  if (remoteOff) {
+    return `<div class="joinbtn">利用者画面の「今から参加する」ボタン: ${state}<span>・ 端末側でのみ変更できます</span></div>`;
+  }
+  return `<div class="joinbtn">利用者画面の「今から参加する」ボタン: ${state}
+    <button class="small" data-cmd="${v ? 'hide_join_button' : 'show_join_button'}" data-dev="${d.id}">${v ? '隠す' : '出す'}</button>
+    <span>${v ? '利用者が自分で教室に入れます' : '事務局の「今つなぐ」か定時起動だけで入ります'}</span>
+  </div>`;
+}
+
 function render(d) {
   const isPlay = d.kind === 'play';
   // 端末側で「事務局からの操作」をオフにしている。ここは表示するだけで、変えられない
@@ -429,7 +453,7 @@ function render(d) {
   const sched = d.schedule || {};
   const cmd = latestCmd[d.id];
   const cmdText = cmd
-    ? `最近の合図: <b>${esc({join:'今つなぐ',leave:'退出',reload:'再読み込み'}[cmd.action] || cmd.action)}</b>
+    ? `最近の合図: <b>${esc(ACTION_JA[cmd.action] || cmd.action)}</b>
        → ${esc(STATUS_JA[cmd.status] || cmd.status)}${cmd.status_detail ? '(' + esc(cmd.status_detail) + ')' : ''}
        <span style="color:var(--mute)">${jst(cmd.created_at)}${cmd.issued_by_email ? ' ・ ' + esc(cmd.issued_by_email) : ''}</span>`
     : '';
@@ -507,6 +531,7 @@ function render(d) {
       <span class="cmd">${cmdText}</span>`}
       ${(isPlay || !d.is_online) ? `<button class="small ghost danger" data-del="${d.id}" style="margin-left:auto">この端末を削除</button>` : ''}
     </div>
+    ${isPlay ? '' : joinButtonRow(d, remoteOff)}
     ${isPlay ? '' : `<details class="tt-wrap ${remoteOff ? 'ro' : ''}" ${ttOpenAll ? 'open' : ''}>
       <summary>時間割<span class="sum">${esc(ttSummary)}${remoteOff ? ' ・ 端末側でのみ変更できます' : ''}</span></summary>
       <table class="tt">
@@ -528,7 +553,7 @@ function bind() {
     const { error } = await sb.rpc('issue_command', { p_device_id: b.dataset.dev, p_action: action });
     b.disabled = false;
     if (error) { toast('送れませんでした: ' + error.message); return; }
-    toast(action === 'join' ? '「今つなぐ」を送りました' : '「退出」を送りました');
+    toast(`「${ACTION_JA[action] || action}」を送りました` + (action.endsWith('_join_button') ? '(端末がオンラインなら数秒で反映されます)' : ''));
     setTimeout(refresh, 3000);
   });
 
