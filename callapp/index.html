@@ -431,18 +431,32 @@ function jst(iso) {
 // 利用者モードの画面に「今から参加する」ボタンを出しているか、と、その出し入れ。
 // 端末が心拍で報告してくる事実(user_join_button)を表示し、合図(commands)で切り替える。
 // 「事務局からの操作」がオフの端末は表示だけ(送っても端末が断る)。
+// 版の比較: cmpVer('0.3.10', '0.3.7') > 0
+function cmpVer(a, b) {
+  const pa = String(a || '0').split('.').map(Number), pb = String(b || '0').split('.').map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d) return d;
+  }
+  return 0;
+}
+
 function joinButtonRow(d, remoteOff) {
   const v = d.user_join_button;
   if (v == null) {
     return `<div class="joinbtn">利用者画面の「今から参加する」ボタン: <span>この端末のアプリ(v${esc(d.app_version || '―')})は未対応。0.3.5 以上に更新すると出し入れできます</span></div>`;
   }
-  const state = v ? '<b>出している</b>' : '<b>出していない</b>';
-  if (remoteOff) {
-    return `<div class="joinbtn">利用者画面の「今から参加する」ボタン: ${state}<span>・ 端末側でのみ変更できます</span></div>`;
+  const state = v == null ? '' : v ? '<b>出している</b>' : '<b>出していない</b>';
+  // 「事務局からの操作」がオフの端末でも、このボタンの出し入れだけはできる(0.3.7〜)。
+  // 事務局が勝手につなぐ操作ではなく、つなぐかどうかはご本人・ご家族が押して決めるため。
+  // ただし 0.3.5〜0.3.6 の端末はオフのとき合図を拾いに来ないので、届かない。
+  const oldApp = remoteOff && !(cmpVer(d.app_version, '0.3.7') >= 0);
+  if (oldApp) {
+    return `<div class="joinbtn">利用者画面の「今から参加する」ボタン: ${state}<span>・ この端末(v${esc(d.app_version)})は「事務局からの操作」がオフのため端末側でのみ変更できます。0.3.7 以上に更新すると、ここから変えられます</span></div>`;
   }
   return `<div class="joinbtn">利用者画面の「今から参加する」ボタン: ${state}
     <button class="small" data-cmd="${v ? 'hide_join_button' : 'show_join_button'}" data-dev="${d.id}">${v ? '隠す' : '出す'}</button>
-    <span>${v ? '利用者が自分で教室に入れます' : '事務局の「今つなぐ」か定時起動だけで入ります'}</span>
+    <span>${v ? '利用者(ご家族)が自分で教室に入れます' : (remoteOff ? '定時起動だけで入ります' : '事務局の「今つなぐ」か定時起動だけで入ります')}${remoteOff ? ' ・ 出し入れは「事務局からの操作」がオフでもできます(つなぐかどうかは向こうが決めるため)' : ''}</span>
   </div>`;
 }
 
@@ -529,7 +543,7 @@ function render(d) {
     </details>
     <div class="actions">
       ${isPlay ? `<span class="cmd">事務局からの呼び出し・予定変更は使えません(定時起動はアプリ側の設定)</span>`
-        : remoteOff ? `<span class="cmd">この端末は<b>事務局からの操作をオフ</b>にしています。呼び出しも時間の変更もできません。<br>変えるには端末の設定画面で「事務局からの操作を許可する」をオンにしてください。</span>`
+        : remoteOff ? `<span class="cmd">この端末は<b>事務局からの操作をオフ</b>にしています。呼び出しも時間の変更もできません(下の「今から参加する」ボタンの出し入れだけはできます)。<br>変えるには端末の設定画面で「事務局からの操作を許可する」をオンにしてください。</span>`
         : `
       <button class="primary" data-cmd="join" data-dev="${d.id}">今つなぐ</button>
       <button data-cmd="leave" data-dev="${d.id}">退出</button>
