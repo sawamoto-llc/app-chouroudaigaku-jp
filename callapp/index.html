@@ -491,16 +491,19 @@ function render(d) {
       ${isPlay
         ? `<span class="badge kind">Play版</span><span style="color:var(--sub);font-size:14px">自動監視なし(台帳のみ)</span>`
         : `<span class="badge ${d.is_online ? 'on' : 'off'}">${d.is_online ? 'オンライン' : 'オフライン'}</span>
-           <span style="color:var(--sub)">${esc(STATE_JA[d.state] || d.state || '')}</span>
+           ${d.is_online ? `<span style="color:var(--sub)">${esc(STATE_JA[d.state] || d.state || '')}</span>` : ''}
            ${remoteOff ? `<span class="badge lock">🔒 事務局からの操作: オフ</span>` : ''}`}
     </div>
     <div class="meta">
       ${modelName(d) ? `<span title="${esc(d.device_model)} / Android ${esc(d.android_version || '')}">${esc(modelName(d))}${d.android_version ? ` · Android ${esc(d.android_version)}` : ''}</span>` : ''}
-      ${isPlay ? `<span>Play版アプリ v${esc(d.app_version || '―')}</span>` : `
+      ${isPlay ? `<span>Play版アプリ v${esc(d.app_version || '―')}</span>` : d.is_online ? `
       <span>${pw}</span>
       <span>電池 ${d.battery_level ?? '―'}%</span>
       <span>最終連絡 ${agoText(d.last_seen_at)}</span>
       ${netLine ? `<span>${netLine}</span>` : ''}
+      <span>v${esc(d.app_version || '―')}</span>` : `
+      <span class="warn">最終連絡 ${agoText(d.last_seen_at)}(それ以降の様子は分かりません)</span>
+      <span style="color:var(--mute)">最後の報告: ${esc(STATE_JA[d.state] || d.state || '―')} ・ ${d.is_charging === false ? '電源なし' : d.is_charging ? '充電中' : '電源不明'} ・ 電池 ${d.battery_level ?? '―'}%</span>
       <span>v${esc(d.app_version || '―')}</span>`}
     </div>
     <div class="note">
