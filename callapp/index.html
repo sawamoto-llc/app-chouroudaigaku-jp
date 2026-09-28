@@ -46,6 +46,7 @@
   .badge.off { background: #fdecea; color: var(--warn); }
   .badge.kind { background: #ece9f5; color: #4a3f7a; }
   .badge.lock { background: #fff3e0; color: #8a5a00; }
+  .badge.autooff { background: #fdecea; color: #b3261e; }
   /* 利用者画面の「今から参加する」ボタンの出し入れ */
   .joinbtn { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
              margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line);
@@ -506,7 +507,8 @@ function render(d) {
         ? `<span class="badge kind">Play版</span><span style="color:var(--sub);font-size:14px">自動監視なし(台帳のみ)</span>`
         : `<span class="badge ${d.is_online ? 'on' : 'off'}">${d.is_online ? 'オンライン' : 'オフライン'}</span>
            ${d.is_online ? `<span style="color:var(--sub)">${esc(STATE_JA[d.state] || d.state || '')}</span>` : ''}
-           ${remoteOff ? `<span class="badge lock">🔒 事務局からの操作: オフ</span>` : ''}`}
+           ${remoteOff ? `<span class="badge lock">🔒 事務局からの操作: オフ</span>` : ''}
+           ${d.auto_launch === false ? `<span class="badge autooff" title="端末の管理者モードで「自動起動をオフにする」が押されています。端末側で「自動起動をオンにする」を押すまで、決まった時間に始まりません">⛔ 自動起動オフ(定時に始まりません)</span>` : ''}`}
     </div>
     <div class="meta">
       ${modelName(d) ? `<span title="${esc(d.device_model)} / Android ${esc(d.android_version || '')}">${esc(modelName(d))}${d.android_version ? ` · Android ${esc(d.android_version)}` : ''}</span>` : ''}
