@@ -117,6 +117,7 @@
   .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
   .toolbar input { font: inherit; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; min-width: 14em; }
   .toolbar .count { color: var(--sub); font-size: 14px; }
+  .toolbar select { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; }
 
   /* 時間割 */
   table.tt { border-collapse: separate; border-spacing: 4px; margin-top: 14px; }
@@ -160,6 +161,13 @@
   <section id="app" hidden>
     <div class="toolbar">
       <input id="q" type="search" placeholder="端末名・メモで絞り込み" aria-label="絞り込み">
+      <label style="font-size:14px;color:var(--sub)">並び
+        <select id="sortBy" aria-label="並び替え">
+          <option value="version">アプリの版が新しい順</option>
+          <option value="attention">要対応が上</option>
+          <option value="name">名前順</option>
+        </select>
+      </label>
       <label style="font-size:14px;color:var(--sub)"><input type="checkbox" id="ttOpen"> 時間割を開いて表示</label>
       <span class="count" id="count"></span>
     </div>
@@ -298,17 +306,16 @@ async function refresh() {
 
   const list = $('#list');
   if (!devs?.length) { list.innerHTML = '<div class="empty">登録された端末はまだありません</div>'; return; }
-  // オフライン(要対応)を上に、その中で名前順
-  // 並び: オフラインの貸出版(要対応) → オンラインの貸出版 → Play版(台帳)。各グループ内は名前順
-  const rank = d => d.kind === 'play' ? 2 : (d.is_online ? 1 : 0);
-  devs.sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name, 'ja'));
+  sortDevices(devs);
   list.innerHTML = devs.map(render).join('');
   bind();
   applyFilter();
   const call = devs.filter(d => d.kind !== 'play');
   const off = call.filter(d => !d.is_online).length;
   const play = devs.length - call.length;
-  $('#count').textContent = `貸出版 ${call.length}台` + (off ? `(うちオフライン ${off}台)` : '') + (play ? ` ・ Play版 ${play}台` : '');
+  const need = call.filter(d => attentionScore(d) > 0).length;
+  $('#count').textContent = `貸出版 ${call.length}台` + (off ? `(うちオフライン ${off}台)` : '')
+    + (need ? ` ・ 要対応 ${need}台` : '') + (play ? ` ・ Play版 ${play}台` : '');
 }
 
 // ===== 回線(SIM)の台帳 =====
@@ -429,6 +436,40 @@ $('#btnAddLine').onclick = async () => {
 let ttOpenAll = false;
 $('#ttOpen').onchange = (e) => { ttOpenAll = e.target.checked; document.querySelectorAll('details.tt-wrap').forEach(d => d.open = ttOpenAll); };
 $('#q').oninput = applyFilter;
+
+// ===== 並び替え =====
+// 30台程度までを想定。Play版(台帳だけ)はどの並びでも一番下。選んだ並びはこのブラウザに覚えておく。
+const SORT_KEY = 'callapp.sortBy';
+try { const v = localStorage.getItem(SORT_KEY); if (v) $('#sortBy').value = v; } catch (e) {}
+$('#sortBy').onchange = () => {
+  try { localStorage.setItem(SORT_KEY, $('#sortBy').value); } catch (e) {}
+  refresh();
+};
+
+// 事務局が手を打つべきことの重さ。0 なら問題なし
+function attentionScore(d) {
+  if (d.kind === 'play') return 0;
+  let n = 0;
+  if (!d.is_online) n += 100;                                        // 連絡が来ない
+  if (d.auto_launch === false) n += 50;                              // 定時に始まらない
+  if (d.login_set === false) n += 50;                                // 入れない
+  if (d.is_online && d.is_charging === false) n += 20;               // 電源が抜けている?
+  if (d.admin_mode === true && d.note) n += 10;                      // 貸出中なのに管理者モードのまま
+  if (d.app_version && cmpVer(d.app_version, UPDATE_CAPABLE_FROM) < 0) n += 1;   // 古い(USBで更新)
+  return n;
+}
+
+function sortDevices(devs) {
+  const by = $('#sortBy').value;
+  const byName = (a, b) => a.name.localeCompare(b.name, 'ja');
+  devs.sort((a, b) => {
+    const pa = a.kind === 'play' ? 1 : 0, pb = b.kind === 'play' ? 1 : 0;
+    if (pa !== pb) return pa - pb;                                   // Play版は一番下
+    if (by === 'version') return cmpVer(b.app_version, a.app_version) || byName(a, b);
+    if (by === 'attention') return attentionScore(b) - attentionScore(a) || byName(a, b);
+    return byName(a, b);
+  });
+}
 function applyFilter() {
   const q = $('#q').value.trim().toLowerCase();
   document.querySelectorAll('.device').forEach(el => {
@@ -465,6 +506,7 @@ function deviceConfigRow(d) {
     items.push(`点灯 ${esc(on)} ・ 消灯 ${esc(off)}`);
   } else if (d.admin_mode != null) items.push('自動点灯・消灯なし');
   if (d.login_set === false) items.push('<span class="warn">noiz のログイン情報が未設定</span>');
+  else if (d.login_set === true) items.push('<span title="メールアドレスが入っているかだけを見ています。パスワードの正しさは、入室に失敗したときの理由(最近の合図)で分かります">noiz のログイン設定済み</span>');
   return `<div class="cfg">${items.join('<span>・</span>')}</div>`;
 }
 
