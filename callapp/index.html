@@ -47,6 +47,12 @@
   .badge.kind { background: #ece9f5; color: #4a3f7a; }
   .badge.lock { background: #fff3e0; color: #8a5a00; }
   .badge.autooff { background: #fdecea; color: #b3261e; }
+  .badge.old  { background: #fff3e0; color: #8a5a00; }
+  .badge.latest { background: #e6f4ea; color: var(--ok); }
+  .release { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+             padding: 12px 16px; margin-bottom: 14px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .release b { font-size: 16px; }
+  .release .sub { color: var(--sub); font-size: 14px; }
   /* 利用者画面の「今から参加する」ボタンの出し入れ */
   .joinbtn { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
              margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line);
@@ -155,6 +161,11 @@
       <label style="font-size:14px;color:var(--sub)"><input type="checkbox" id="ttOpen"> 時間割を開いて表示</label>
       <span class="count" id="count"></span>
     </div>
+    <!-- ===== アプリの更新 =====
+         事務局からの「更新」合図で、端末が自分で最新版に入れ替わる(0.4.0〜)。
+         最新版の情報は tools/publish_release.py が app_release に書く。 -->
+    <div class="release" id="release"></div>
+
     <div id="list"></div>
 
     <!-- ===== 回線(SIM)の台帳 =====
@@ -190,7 +201,10 @@ const SLOTS = [
 const DAYS = ['月', '火', '水', '木', '金'];   // 1=月 … 5=金
 const STATE_JA = { idle: '待機中', joining: '参加処理中', in_room: '参加中', locked_waiting: '入室待ち', error: 'エラー' };
 const STATUS_JA = { pending: 'まだ届いていない', received: '受信・参加処理中', joined: '✅ 入室した', left: '退出した', failed: '⚠ 失敗', done: '✅ 反映した' };
-const ACTION_JA = { join: '今つなぐ', leave: '退出', reload: '再読み込み', show_join_button: '参加ボタンを出す', hide_join_button: '参加ボタンを隠す' };
+const ACTION_JA = { join: '今つなぐ', leave: '退出', reload: '再読み込み', show_join_button: '参加ボタンを出す', hide_join_button: '参加ボタンを隠す', update_app: 'アプリ更新' };
+// 事務局から更新できる最初の版。これより古い端末は一度 USB で入れ替える必要がある
+const UPDATE_CAPABLE_FROM = '0.4.0';
+let latestRelease = null;   // app_release の1行(最新版の版・URL)
 
 // 型番 → 読みやすい機種名(手元にある機種だけ。知らない型番はそのまま出す)
 const MODEL_JA = {
@@ -265,13 +279,16 @@ async function refresh() {
              || [...document.querySelectorAll('[data-sim] input')].some(i => i.value.trim() !== i.defaultValue.trim());
   if (dirty) return;
 
-  const [{ data: devs, error }, { data: cmds }, { data: lines }] = await Promise.all([
+  const [{ data: devs, error }, { data: cmds }, { data: lines }, { data: rel }] = await Promise.all([
     sb.from('v_devices_status').select('*').order('name'),
     sb.from('commands').select('device_id, action, status, status_detail, created_at, status_at, issued_by_email')
       .order('created_at', { ascending: false }).limit(50),
     sb.from('v_sim_lines').select('*').order('number'),
+    sb.from('app_release').select('*').eq('id', 1).maybeSingle(),
   ]);
   renderLines(lines ?? []);
+  latestRelease = rel ?? null;
+  renderRelease(devs ?? []);
   if (error) { toast('読み込みに失敗しました: ' + error.message); return; }
 
   latestCmd = {};
@@ -432,6 +449,46 @@ function jst(iso) {
 // 利用者モードの画面に「今から参加する」ボタンを出しているか、と、その出し入れ。
 // 端末が心拍で報告してくる事実(user_join_button)を表示し、合図(commands)で切り替える。
 // 「事務局からの操作」がオフの端末は表示だけ(送っても端末が断る)。
+// ===== アプリの更新 =====
+function versionBadge(d) {
+  if (!latestRelease || !latestRelease.version || !d.app_version) return '';
+  if (cmpVer(d.app_version, latestRelease.version) >= 0) return ' <span class="badge latest">最新</span>';
+  if (cmpVer(d.app_version, UPDATE_CAPABLE_FROM) < 0) {
+    return ` <span class="badge old" title="この版は事務局からの更新に対応していません。一度 USB で ${UPDATE_CAPABLE_FROM} 以上にすると、以後はここから更新できます">古い(USBで更新)</span>`;
+  }
+  return ` <button class="small" data-update="${d.id}">v${esc(latestRelease.version)} に更新</button>`;
+}
+
+function renderRelease(devs) {
+  const box = $('#release');
+  if (!latestRelease || !latestRelease.version) {
+    box.innerHTML = '<span class="sub">最新版の情報がまだ登録されていません(tools/publish_release.py で登録します)</span>';
+    return;
+  }
+  const targets = devs.filter(d => d.kind !== 'play' && d.is_online && d.app_version
+    && cmpVer(d.app_version, latestRelease.version) < 0 && cmpVer(d.app_version, UPDATE_CAPABLE_FROM) >= 0);
+  const usbOnly = devs.filter(d => d.kind !== 'play' && d.app_version && cmpVer(d.app_version, UPDATE_CAPABLE_FROM) < 0);
+  box.innerHTML = `
+    <span>&#128230; 呼び出しアプリの最新版: <b>v${esc(latestRelease.version)}</b></span>
+    <span class="sub">${latestRelease.updated_at ? jst(latestRelease.updated_at) + ' 登録' : ''}${latestRelease.note ? ' ・ ' + esc(latestRelease.note) : ''}</span>
+    ${targets.length ? `<button class="small primary" id="btnUpdateAll">オンラインの ${targets.length} 台をまとめて更新</button>`
+                     : '<span class="sub">事務局から更新できる端末は、すべて最新です</span>'}
+    ${usbOnly.length ? `<span class="sub">・ USB でしか更新できない端末: ${usbOnly.map(d => esc(d.name)).join('、')}</span>` : ''}
+  `;
+  const all = $('#btnUpdateAll');
+  if (all) all.onclick = async () => {
+    if (!confirm(`${targets.length} 台に「アプリ更新」を送りますか?\n\n授業中・授業の直前の端末は、端末側で自動的に見送られます。`)) return;
+    all.disabled = true;
+    let ok = 0, ng = 0;
+    for (const d of targets) {
+      const { error } = await sb.rpc('issue_update', { p_device_id: d.id });
+      if (error) ng++; else ok++;
+    }
+    toast(`更新を送りました: ${ok} 台${ng ? `(送れなかった端末 ${ng} 台)` : ''}`);
+    setTimeout(refresh, 3000);
+  };
+}
+
 // 版の比較: cmpVer('0.3.10', '0.3.7') > 0
 function cmpVer(a, b) {
   const pa = String(a || '0').split('.').map(Number), pb = String(b || '0').split('.').map(Number);
@@ -469,7 +526,7 @@ function render(d) {
   const cmd = latestCmd[d.id];
   const cmdText = cmd
     ? `最近の合図: <b>${esc(ACTION_JA[cmd.action] || cmd.action)}</b>
-       → ${esc(STATUS_JA[cmd.status] || cmd.status)}${cmd.status_detail ? '(' + esc(cmd.status_detail) + ')' : ''}
+       → ${esc(cmd.action === 'update_app' && cmd.status === 'received' ? '更新中' : (STATUS_JA[cmd.status] || cmd.status))}${cmd.status_detail ? '(' + esc(cmd.status_detail) + ')' : ''}
        <span style="color:var(--mute)">${jst(cmd.created_at)}${cmd.issued_by_email ? ' ・ ' + esc(cmd.issued_by_email) : ''}</span>`
     : '';
   const pw = d.is_charging === false ? '<span class="warn">⚠ 電源が抜けている?</span>' : (d.is_charging ? '充電中' : '―');
@@ -517,7 +574,7 @@ function render(d) {
       <span>電池 ${d.battery_level ?? '―'}%</span>
       <span>最終連絡 ${agoText(d.last_seen_at)}</span>
       ${netLine ? `<span>${netLine}</span>` : ''}
-      <span>v${esc(d.app_version || '―')}</span>` : `
+      <span>v${esc(d.app_version || '―')}${versionBadge(d)}</span>` : `
       <span class="warn">最終連絡 ${agoText(d.last_seen_at)}(それ以降の様子は分かりません)</span>
       <span style="color:var(--mute)">最後の報告: ${esc(STATE_JA[d.state] || d.state || '―')} ・ ${d.is_charging === false ? '電源なし' : d.is_charging ? '充電中' : '電源不明'} ・ 電池 ${d.battery_level ?? '―'}%</span>
       <span>v${esc(d.app_version || '―')}</span>`}
@@ -575,6 +632,18 @@ function bind() {
     b.disabled = false;
     if (error) { toast('送れませんでした: ' + error.message); return; }
     toast(`「${ACTION_JA[action] || action}」を送りました` + (action.endsWith('_join_button') ? '(端末がオンラインなら数秒で反映されます)' : ''));
+    setTimeout(refresh, 3000);
+  });
+
+  // アプリ更新(端末ごと)
+  document.querySelectorAll('[data-update]').forEach(b => b.onclick = async () => {
+    const name = b.closest('.device').querySelector('[data-rename]').value;
+    if (!confirm(`「${name}」に「アプリ更新(v${latestRelease.version})」を送りますか?\n\n端末は最新版をダウンロードして自分で入れ替わり、1〜2分で再起動します。授業中・授業の直前なら端末側で見送られます。`)) return;
+    b.disabled = true;
+    const { error } = await sb.rpc('issue_update', { p_device_id: b.dataset.update });
+    b.disabled = false;
+    if (error) { toast('送れませんでした: ' + error.message); return; }
+    toast('「アプリ更新」を送りました(進み具合は「最近の合図」に出ます)');
     setTimeout(refresh, 3000);
   });
 
