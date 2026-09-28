@@ -48,6 +48,8 @@
   .badge.lock { background: #fff3e0; color: #8a5a00; }
   .badge.autooff { background: #fdecea; color: #b3261e; }
   .badge.old  { background: #fff3e0; color: #8a5a00; }
+  .cfg { color: var(--sub); font-size: 14px; margin-top: 4px; display: flex; gap: 14px; flex-wrap: wrap; }
+  .cfg .warn { color: #b3261e; font-weight: 600; }
   .badge.latest { background: #e6f4ea; color: var(--ok); }
   .release { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
              padding: 12px 16px; margin-bottom: 14px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
@@ -449,6 +451,23 @@ function jst(iso) {
 // 利用者モードの画面に「今から参加する」ボタンを出しているか、と、その出し入れ。
 // 端末が心拍で報告してくる事実(user_join_button)を表示し、合図(commands)で切り替える。
 // 「事務局からの操作」がオフの端末は表示だけ(送っても端末が断る)。
+// 端末の設定(見るだけ)。「事務局からの操作」のオン/オフに関係なく、端末が心拍で報告してくる。
+// 0.4.2 より前の端末は何も報告しないので、行ごと出さない。
+function deviceConfigRow(d) {
+  if (d.admin_mode == null && d.screen_schedule == null && d.login_set == null) return '';
+  const items = [];
+  if (d.admin_mode != null) items.push(d.admin_mode
+    ? '<span class="warn" title="設定変更や「自動起動をオフにする」が押せる画面のままです。利用者に渡すときは利用者モードに">管理者モードのまま</span>'
+    : '利用者モード');
+  if (d.screen_off) items.push('消灯中');
+  if (d.screen_schedule) {
+    const [on, off] = d.screen_schedule.split('-');
+    items.push(`点灯 ${esc(on)} ・ 消灯 ${esc(off)}`);
+  } else if (d.admin_mode != null) items.push('自動点灯・消灯なし');
+  if (d.login_set === false) items.push('<span class="warn">noiz のログイン情報が未設定</span>');
+  return `<div class="cfg">${items.join('<span>・</span>')}</div>`;
+}
+
 // ===== アプリの更新 =====
 function versionBadge(d) {
   if (!latestRelease || !latestRelease.version || !d.app_version) return '';
@@ -579,6 +598,7 @@ function render(d) {
       <span style="color:var(--mute)">最後の報告: ${esc(STATE_JA[d.state] || d.state || '―')} ・ ${d.is_charging === false ? '電源なし' : d.is_charging ? '充電中' : '電源不明'} ・ 電池 ${d.battery_level ?? '―'}%</span>
       <span>v${esc(d.app_version || '―')}</span>`}
     </div>
+    ${isPlay ? '' : deviceConfigRow(d)}
     <div class="note">
       <label for="note-${d.id}">貸出先・メモ</label>
       <input id="note-${d.id}" value="${esc(d.note || '')}" data-note="${d.id}" placeholder="例: 四万十会A / 2026/9 設置 / ルーター併用" maxlength="200">
