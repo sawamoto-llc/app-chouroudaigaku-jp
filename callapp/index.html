@@ -598,6 +598,9 @@ function volumeRow(d, remoteOff) {
     <button class="small" data-vol="${down}" data-dev="${d.id}"${offline}>− 小さく</button>
     <button class="small" data-vol="${up}" data-dev="${d.id}"${offline}>＋ 大きく</button>
     <button class="small" data-vol="100" data-dev="${d.id}"${offline}>最大</button>
+    ${d.other_volume == null ? '' : d.other_volume === 0
+        ? '<span title="通知音・着信音・タッチ音・アラームは、端末が1分ごとに0へ戻しています">・ 通知音など: 0(固定)</span>'
+        : `<span class="warn" title="機種の都合で0にできない音が残っています。授業の声と連動している可能性があります">・ 通知音などが鳴る状態(${d.other_volume}%)</span>`}
     <span>ボタンはメディアと通話の両方を同じ割合にそろえます${remoteOff ? ' ・ 「事務局からの操作」がオフでも変えられます(届くまで最大1分)' : ''}</span>
   </div>`;
 }
