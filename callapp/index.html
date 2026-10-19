@@ -60,6 +60,7 @@
              margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line);
              color: var(--sub); font-size: 14px; }
   .joinbtn b { color: var(--ink); }
+  .joinbtn b.warn, .joinbtn span.warn { color: var(--warn); }
   .badge.use  { background: #e6f4ea; color: var(--ok); }
   .badge.spare{ background: #eef1f5; color: #4a5568; }
   .badge.cxl  { background: #f1f1f1; color: var(--mute); }
@@ -211,7 +212,7 @@ const SLOTS = [
 const DAYS = ['月', '火', '水', '木', '金'];   // 1=月 … 5=金
 const STATE_JA = { idle: '待機中', joining: '参加処理中', in_room: '参加中', locked_waiting: '入室待ち', error: 'エラー' };
 const STATUS_JA = { pending: 'まだ届いていない', received: '受信・参加処理中', joined: '✅ 入室した', left: '退出した', failed: '⚠ 失敗', done: '✅ 反映した' };
-const ACTION_JA = { join: '今つなぐ', leave: '退出', reload: '再読み込み', show_join_button: '参加ボタンを出す', hide_join_button: '参加ボタンを隠す', update_app: 'アプリ更新' };
+const ACTION_JA = { join: '今つなぐ', leave: '退出', reload: '再読み込み', show_join_button: '参加ボタンを出す', hide_join_button: '参加ボタンを隠す', update_app: 'アプリ更新', set_volume: '音量' };
 // 事務局から更新できる最初の版。これより古い端末は一度 USB で入れ替える必要がある
 const UPDATE_CAPABLE_FROM = '0.4.0';
 let latestRelease = null;   // app_release の1行(最新版の版・URL)
@@ -579,6 +580,25 @@ function joinButtonRow(d, remoteOff) {
   </div>`;
 }
 
+// 音量。端末が心拍で報告する「いまの音量」を表示し、合図(set_volume)で変える(0.4.13〜)。
+// 授業中に「聞こえない」と言われたときに上げるため。ご本人が本体のボタンで変えるのも自由。
+// 「事務局からの操作」がオフの端末にも送れる(カメラ・マイク・時間に関わらないため)。
+const VOLUME_STEP = 15;
+function volumeRow(d, remoteOff) {
+  if (d.volume == null) {
+    return `<div class="joinbtn">音量: <span>この端末のアプリ(v${esc(d.app_version || '―')})は未対応。0.4.13 以上に更新すると、ここから変えられます</span></div>`;
+  }
+  const v = d.volume;
+  const down = Math.max(0, v - VOLUME_STEP), up = Math.min(100, v + VOLUME_STEP);
+  const offline = !d.is_online ? ' disabled title="オフラインの端末には届きません"' : '';
+  return `<div class="joinbtn">音量: <b class="${v <= 30 ? 'warn' : ''}">${v}%</b>${v === 0 ? ' <span class="warn">(消音)</span>' : ''}
+    <button class="small" data-vol="${down}" data-dev="${d.id}"${offline}>− 小さく</button>
+    <button class="small" data-vol="${up}" data-dev="${d.id}"${offline}>＋ 大きく</button>
+    <button class="small" data-vol="100" data-dev="${d.id}"${offline}>最大</button>
+    <span>${d.state === 'in_room' ? '授業中の音量' : '待ち受け中の音量(授業の音量も同じ割合にそろえます)'}${remoteOff ? ' ・ 「事務局からの操作」がオフでも変えられます(届くまで最大1分)' : ''}</span>
+  </div>`;
+}
+
 function render(d) {
   const isPlay = d.kind === 'play';
   // 端末側で「事務局からの操作」をオフにしている。ここは表示するだけで、変えられない
@@ -672,6 +692,7 @@ function render(d) {
       ${(isPlay || !d.is_online) ? `<button class="small ghost danger" data-del="${d.id}" style="margin-left:auto">この端末を削除</button>` : ''}
     </div>
     ${isPlay ? '' : joinButtonRow(d, remoteOff)}
+    ${isPlay ? '' : volumeRow(d, remoteOff)}
     ${isPlay ? '' : `<details class="tt-wrap ${remoteOff ? 'ro' : ''}" ${ttOpenAll ? 'open' : ''}>
       <summary>時間割<span class="sum">${esc(ttSummary)}${remoteOff ? ' ・ 端末側でのみ変更できます' : ''}</span></summary>
       <table class="tt">
@@ -694,6 +715,17 @@ function bind() {
     b.disabled = false;
     if (error) { toast('送れませんでした: ' + error.message); return; }
     toast(`「${ACTION_JA[action] || action}」を送りました` + (action.endsWith('_join_button') ? '(端末がオンラインなら数秒で反映されます)' : ''));
+    setTimeout(refresh, 3000);
+  });
+
+  // 音量
+  document.querySelectorAll('[data-vol]').forEach(b => b.onclick = async () => {
+    const level = Number(b.dataset.vol);
+    b.disabled = true;
+    const { error } = await sb.rpc('issue_volume', { p_device_id: b.dataset.dev, p_level: level });
+    b.disabled = false;
+    if (error) { toast('送れませんでした: ' + error.message); return; }
+    toast(`音量を ${level}% にする合図を送りました(端末がオンラインなら数秒で反映されます)`);
     setTimeout(refresh, 3000);
   });
 
