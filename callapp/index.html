@@ -591,11 +591,14 @@ function volumeRow(d, remoteOff) {
   const v = d.volume;
   const down = Math.max(0, v - VOLUME_STEP), up = Math.min(100, v + VOLUME_STEP);
   const offline = !d.is_online ? ' disabled title="オフラインの端末には届きません"' : '';
-  return `<div class="joinbtn">音量: <b class="${v <= 30 ? 'warn' : ''}">${v}%</b>${v === 0 ? ' <span class="warn">(消音)</span>' : ''}
+  // v はメディアと通話の小さいほう(0.4.14〜)。内訳があれば添える。0.4.13 は内訳なし
+  const detail = (d.volume_media != null && d.volume_call != null)
+    ? ` <span title="授業の声がメディアと通話のどちらで鳴るかは機種によって違うので、小さいほうを大きく出しています">(メディア ${d.volume_media}%・通話 ${d.volume_call}%)</span>` : '';
+  return `<div class="joinbtn">音量: <b class="${v <= 30 ? 'warn' : ''}">${v}%</b>${detail}${v === 0 ? ' <span class="warn">(消音)</span>' : ''}
     <button class="small" data-vol="${down}" data-dev="${d.id}"${offline}>− 小さく</button>
     <button class="small" data-vol="${up}" data-dev="${d.id}"${offline}>＋ 大きく</button>
     <button class="small" data-vol="100" data-dev="${d.id}"${offline}>最大</button>
-    <span>${d.state === 'in_room' ? '授業中の音量' : '待ち受け中の音量(授業の音量も同じ割合にそろえます)'}${remoteOff ? ' ・ 「事務局からの操作」がオフでも変えられます(届くまで最大1分)' : ''}</span>
+    <span>ボタンはメディアと通話の両方を同じ割合にそろえます${remoteOff ? ' ・ 「事務局からの操作」がオフでも変えられます(届くまで最大1分)' : ''}</span>
   </div>`;
 }
 
