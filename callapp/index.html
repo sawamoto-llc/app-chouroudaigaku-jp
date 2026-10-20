@@ -502,6 +502,8 @@ function deviceConfigRow(d) {
     ? '<span class="warn" title="設定変更や「自動起動をオフにする」が押せる画面のままです。利用者に渡すときは利用者モードに">管理者モードのまま</span>'
     : '利用者モード');
   if (d.screen_off) items.push('消灯中');
+  // このアプリの画面が表に出ているか(0.4.18〜)。false が続くと端末が約1分で待ち受けを出し直す
+  if (d.is_online && d.app_on_screen === false) items.push('<span class="warn" title="設定画面など、待ち受け以外の画面が表に出ています。端末が約1分で待ち受けを出し直します。続くようなら「退出」を押してください">⚠ 待ち受け以外の画面が出ています</span>');
   if (d.screen_schedule) {
     const [on, off] = d.screen_schedule.split('-');
     items.push(`点灯 ${esc(on)} ・ 消灯 ${esc(off)}`);
