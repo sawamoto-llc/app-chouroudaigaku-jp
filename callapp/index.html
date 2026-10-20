@@ -511,6 +511,35 @@ function deviceConfigRow(d) {
   return `<div class="cfg">${items.join('<span>・</span>')}</div>`;
 }
 
+// 前回のオフライン(3分以上)の期間と理由。つながり直したときに端末が報告する(0.4.16〜)。
+// 心拍は1行を上書きするだけなので、これが無いと「途切れていた間に何があったか」が分からなかった(2026-10-20 SIM-02)
+const GAP_JA = {
+  shutdown:           '電源が切られていた',
+  power_lost:         '電源が落ちていた(電池切れ・強制再起動など)',
+  app_restart:        'アプリが止まり、自動で起動し直した',
+  no_network:         '端末は動いていたが、電波・ネットがつながらなかった(圏外・電波の届かない場所など)',
+  server_unreachable: '端末は動いていて、ネットもあったが事務局に届かなかった',
+  stalled:            '端末の処理が止まっていた(理由不明)',
+};
+function durText(ms) {
+  const m = Math.round(ms / 60000);
+  if (m < 60) return `${m}分`;
+  const h = Math.floor(m / 60);
+  return h < 24 ? `${h}時間${m % 60}分` : `${Math.floor(h / 24)}日${h % 24}時間`;
+}
+function gapRow(d) {
+  const g = d.last_gap;
+  if (!g || !g.from || !g.to) return '';
+  const extra = [];
+  if (g.shutdown_at) extra.push(`電源を切った時刻 ${jst(g.shutdown_at)}`);
+  else if (g.alive_until && g.reason !== 'app_restart') extra.push(`最後に動いていた時刻 ${jst(g.alive_until)}`);
+  if (g.reason === 'shutdown' || g.reason === 'power_lost') extra.push(`起動 ${jst(g.boot_at)}`);
+  return `<div class="cfg" title="端末がつながり直したときに報告したものです(電波なしの回数 ${g.fail_no_network ?? '―'}・ネットありで届かなかった回数 ${g.fail_with_network ?? '―'})">
+    前回のオフライン: ${jst(g.from)}〜${jst(g.to)}(${durText(new Date(g.to) - new Date(g.from))})<span>・</span>
+    <b>${esc(GAP_JA[g.reason] || g.reason)}</b>${extra.length ? `<span>・</span>${extra.join('<span>・</span>')}` : ''}
+  </div>`;
+}
+
 // ===== アプリの更新 =====
 function versionBadge(d) {
   if (!latestRelease || !latestRelease.version || !d.app_version) return '';
@@ -667,6 +696,7 @@ function render(d) {
       <span>v${esc(d.app_version || '―')}</span>`}
     </div>
     ${isPlay ? '' : deviceConfigRow(d)}
+    ${isPlay ? '' : gapRow(d)}
     <div class="note">
       <label for="note-${d.id}">貸出先・メモ</label>
       <input id="note-${d.id}" value="${esc(d.note || '')}" data-note="${d.id}" placeholder="例: 四万十会A / 2026/9 設置 / ルーター併用" maxlength="200">
