@@ -542,6 +542,24 @@ function gapRow(d) {
   </div>`;
 }
 
+// コンセントを抜いた時刻・挿した時刻(0.4.20〜)。端末が20秒ごとに見て書き留め、心拍で送ってくる。
+// 電源が切れている間の抜き差しは分からない(電池切れで落ちたあとに挿した場合は、起動後に見た時刻になる)
+function unpluggedSince(d) {
+  return d.unplugged_at && (!d.plugged_at || new Date(d.unplugged_at) > new Date(d.plugged_at));
+}
+function powerText(d) {
+  if (d.is_charging === false) {
+    const since = unpluggedSince(d)
+      ? `(${jst(d.unplugged_at)}〜・${durText(Date.now() - new Date(d.unplugged_at))})` : '';
+    return `<span class="warn">⚠ 電源が抜けている?${since}</span>`;
+  }
+  if (!d.is_charging) return '―';
+  if (!d.plugged_at || unpluggedSince(d)) return '充電中';
+  const prev = d.unplugged_at
+    ? `・前回抜けていた ${jst(d.unplugged_at)}〜(${durText(new Date(d.plugged_at) - new Date(d.unplugged_at))})` : '';
+  return `<span title="最後にコンセントを挿した時刻です">充電中(${jst(d.plugged_at)}に挿した${prev})</span>`;
+}
+
 // ===== アプリの更新 =====
 function versionBadge(d) {
   if (!latestRelease || !latestRelease.version || !d.app_version) return '';
@@ -647,7 +665,7 @@ function render(d) {
        → ${esc(cmd.action === 'update_app' && cmd.status === 'received' ? '更新中' : (STATUS_JA[cmd.status] || cmd.status))}${cmd.status_detail ? '(' + esc(cmd.status_detail) + ')' : ''}
        <span style="color:var(--mute)">${jst(cmd.created_at)}${cmd.issued_by_email ? ' ・ ' + esc(cmd.issued_by_email) : ''}</span>`
     : '';
-  const pw = d.is_charging === false ? '<span class="warn">⚠ 電源が抜けている?</span>' : (d.is_charging ? '充電中' : '―');
+  const pw = powerText(d);
 
   const rows = SLOTS.map(s => {
     const on = new Set((sched[String(s.n)] || []).map(Number));
@@ -694,7 +712,7 @@ function render(d) {
       ${netLine ? `<span>${netLine}</span>` : ''}
       <span>v${esc(d.app_version || '―')}${versionBadge(d)}</span>` : `
       <span class="warn">最終連絡 ${agoText(d.last_seen_at)}(それ以降の様子は分かりません)</span>
-      <span style="color:var(--mute)">最後の報告: ${esc(STATE_JA[d.state] || d.state || '―')} ・ ${d.is_charging === false ? '電源なし' : d.is_charging ? '充電中' : '電源不明'} ・ 電池 ${d.battery_level ?? '―'}%</span>
+      <span style="color:var(--mute)">最後の報告: ${esc(STATE_JA[d.state] || d.state || '―')} ・ ${d.is_charging === false ? '電源なし' + (unpluggedSince(d) ? `(${jst(d.unplugged_at)}に抜けた)` : '') : d.is_charging ? '充電中' : '電源不明'} ・ 電池 ${d.battery_level ?? '―'}%</span>
       <span>v${esc(d.app_version || '―')}</span>`}
     </div>
     ${isPlay ? '' : deviceConfigRow(d)}
