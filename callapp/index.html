@@ -105,6 +105,15 @@
   .simgrid input:focus { border-color: var(--accent); outline: none; }
   .simgrid .save { grid-column: 2; justify-self: start; }
   .simgrid .ro { padding: 6px 0; }
+  /* できごとの記録(0.4.24〜) */
+  .evbar { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+  .evbar input[type=date] { font: inherit; padding: 4px 8px; border: 1px solid var(--line); border-radius: 8px; }
+  .evlist { margin: 8px 0 0; padding: 0; list-style: none; font-size: 14px; max-height: 360px; overflow-y: auto; }
+  .evlist li { display: grid; grid-template-columns: 5.2em 1fr; gap: 8px; padding: 3px 0; border-bottom: 1px dotted var(--line); }
+  .evlist .t { color: var(--sub); font-variant-numeric: tabular-nums; }
+  .evlist .bad { color: var(--warn); font-weight: 600; }
+  .evlist .good { color: var(--ok); }
+  .evlist .late { color: var(--mute); font-size: 12px; }
   .simgrid details.manual { grid-column: 1 / -1; }
   .simgrid details.manual summary { color: var(--mute); font-size: 13px; cursor: pointer; }
   .simgrid.inner { margin-top: 6px; }
@@ -310,6 +319,7 @@ async function refresh() {
   sortDevices(devs);
   list.innerHTML = devs.map(render).join('');
   bind();
+  evOpen.forEach(id => loadEvents(id));   // 開いている記録は自動更新のたびに新しい分も読む
   applyFilter();
   const call = devs.filter(d => d.kind !== 'play');
   const off = call.filter(d => !d.is_online).length;
@@ -542,6 +552,52 @@ function gapRow(d) {
   </div>`;
 }
 
+// ---- できごとの記録(0.4.24〜) ---------------------------------------------
+// 端末が入室・退室・回線の途切れ・電源の抜き差しを書き留めて、心拍のついでに送ってくる(device_events)。
+// devices は「いま」の1行しかないので、「一度入ったが落ちた?」を後から確かめるために作った(2026-11-27 SIM-02)。
+const evOpen = new Set();     // 開いている端末(自動更新で描き直しても開いたままにする)
+const evCache = {};           // 端末ごとの表示済みHTML
+const evDate = {};            // 端末ごとの選んだ日(YYYY-MM-DD)
+const EV_JA = {
+  app_start: '待ち受けの仕組みが起動', open: '教室の画面を開いた', entered: '✅ 教室に入れた',
+  room_state: '教室の中で画面が変わった', left: '待ち受けに戻った',
+  net_lost: '⚠ 回線が切れた', net_back: '回線がつながった',
+  unplugged: '⚠ コンセントが抜けた', plugged: 'コンセントを挿した',
+};
+function todayJst() {
+  return new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+}
+function evClass(e) {
+  if (e.kind === 'net_lost' || e.kind === 'unplugged') return 'bad';
+  if (e.kind === 'room_state' && !/戻った$/.test(e.detail || '')) return 'bad';
+  if (e.kind === 'left' && /エラー|開けなかった|着かなかった|閉じられた|入れなかった|入室せず/.test(e.detail || '')) return 'bad';
+  if (e.kind === 'entered') return 'good';
+  return '';
+}
+async function loadEvents(devId) {
+  const day = evDate[devId] || todayJst();
+  const from = new Date(day + 'T00:00:00+09:00').toISOString();
+  const to   = new Date(new Date(day + 'T00:00:00+09:00').getTime() + 86400e3).toISOString();
+  const { data, error } = await sb.from('device_events').select('at, kind, detail, received_at')
+    .eq('device_id', devId).gte('at', from).lt('at', to).order('at').limit(1000);
+  let html;
+  if (error) {
+    html = `<div class="err">読み込めませんでした: ${esc(error.message)}(Supabase の SQL v23 が未実行かもしれません)</div>`;
+  } else if (!data.length) {
+    html = `<div style="color:var(--sub);font-size:14px;margin-top:6px">この日の記録はありません(アプリが 0.4.24 より前・まだ届いていない・何も起きていない のどれか)</div>`;
+  } else {
+    html = '<ul class="evlist">' + data.map(e => {
+      const t = new Date(e.at).toLocaleTimeString('ja-JP', { timeZone: 'Asia/Tokyo', hour12: false });
+      const lateMs = new Date(e.received_at) - new Date(e.at);
+      const late = lateMs > 3 * 60e3 ? ` <span class="late">(${jst(e.received_at)}に届いた=つながるまで端末に貯まっていた)</span>` : '';
+      return `<li><span class="t">${t}</span><span class="${evClass(e)}">${esc(EV_JA[e.kind] || e.kind)}${e.detail ? ':' + esc(e.detail) : ''}${late}</span></li>`;
+    }).join('') + '</ul>';
+  }
+  evCache[devId] = html;
+  const box = document.getElementById('ev-' + devId);
+  if (box) box.innerHTML = html;
+}
+
 // コンセントを抜いた時刻・挿した時刻(0.4.20〜)。端末が20秒ごとに見て書き留め、心拍で送ってくる。
 // 電源が切れている間の抜き差しは分からない(電池切れで落ちたあとに挿した場合は、起動後に見た時刻になる)
 function unpluggedSince(d) {
@@ -717,6 +773,11 @@ function render(d) {
     </div>
     ${isPlay ? '' : deviceConfigRow(d)}
     ${isPlay ? '' : gapRow(d)}
+    ${isPlay ? '' : `<details class="sim evlog" data-evdev="${d.id}" ${evOpen.has(d.id) ? 'open' : ''}>
+      <summary>できごとの記録<span class="sum" style="color:var(--sub)">入室・退室・回線の途切れ・電源の抜き差し(アプリ v0.4.24〜)</span></summary>
+      <div class="evbar"><input type="date" data-evdate="${d.id}" value="${evDate[d.id] || todayJst()}"><span style="color:var(--sub);font-size:13px">圏外の間のことは、つながり直したときに届きます</span></div>
+      <div id="ev-${d.id}">${evCache[d.id] || '<div style="color:var(--sub);font-size:14px;margin-top:6px">読み込み中…</div>'}</div>
+    </details>`}
     <div class="note">
       <label for="note-${d.id}">貸出先・メモ</label>
       <input id="note-${d.id}" value="${esc(d.note || '')}" data-note="${d.id}" placeholder="例: 四万十会A / 2026/9 設置 / ルーター併用" maxlength="200">
@@ -761,6 +822,15 @@ function render(d) {
 
 // ---- 操作 -----------------------------------------------------------------
 function bind() {
+  // できごとの記録:開いたら読み込む・日付を変えたら読み直す
+  document.querySelectorAll('details.evlog').forEach(el => el.ontoggle = () => {
+    const id = el.dataset.evdev;
+    // 自動更新で描き直したときも open 付きで toggle が来る。その分は refresh 側で読むので二重に読まない
+    if (el.open) { if (!evOpen.has(id)) { evOpen.add(id); loadEvents(id); } } else evOpen.delete(id);
+  });
+  document.querySelectorAll('[data-evdate]').forEach(i => i.onchange = () => {
+    evDate[i.dataset.evdate] = i.value; evCache[i.dataset.evdate] = ''; loadEvents(i.dataset.evdate);
+  });
   // 今つなぐ / 取り消す
   document.querySelectorAll('[data-cmd]').forEach(b => b.onclick = async () => {
     const name = b.closest('.device').querySelector('[data-rename]').value;
